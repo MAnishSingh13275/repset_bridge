@@ -1,0 +1,88 @@
+{
+  "version": "{{VERSION}}",
+  "releaseDate": "{{RELEASE_DATE}}",
+  "description": "{{DESCRIPTION}}",
+  "changelog": "{{CHANGELOG}}",
+  "minVersion": "{{MIN_VERSION}}",
+  "rolloutPercentage": {{ROLLOUT_PERCENTAGE}},
+  "critical": {{CRITICAL}},
+  "platforms": {
+    "windows": {
+      "amd64": {
+        "url": "{{CDN_BASE_URL}}/gym-door-bridge-windows-amd64.exe",
+        "sha256": "{{WINDOWS_AMD64_SHA256}}",
+        "size": {{WINDOWS_AMD64_SIZE}},
+        "signature": "{{WINDOWS_AMD64_SIGNATURE}}"
+      },
+      "386": {
+        "url": "{{CDN_BASE_URL}}/gym-door-bridge-windows-386.exe",
+        "sha256": "{{WINDOWS_386_SHA256}}",
+        "size": {{WINDOWS_386_SIZE}},
+        "signature": "{{WINDOWS_386_SIGNATURE}}"
+      }
+    },
+    "darwin": {
+      "amd64": {
+        "url": "{{CDN_BASE_URL}}/gym-door-bridge-darwin-amd64",
+        "sha256": "{{DARWIN_AMD64_SHA256}}",
+        "size": {{DARWIN_AMD64_SIZE}},
+        "signature": "{{DARWIN_AMD64_SIGNATURE}}"
+      },
+      "arm64": {
+        "url": "{{CDN_BASE_URL}}/gym-door-bridge-darwin-arm64",
+        "sha256": "{{DARWIN_ARM64_SHA256}}",
+        "size": {{DARWIN_ARM64_SIZE}},
+        "signature": "{{DARWIN_ARM64_SIGNATURE}}"
+      }
+    },
+    "linux": {
+      "amd64": {
+        "url": "{{CDN_BASE_URL}}/gym-door-bridge-linux-amd64",
+        "sha256": "{{LINUX_AMD64_SHA256}}",
+        "size": {{LINUX_AMD64_SIZE}},
+        "signature": "{{LINUX_AMD64_SIGNATURE}}"
+      },
+      "arm64": {
+        "url": "{{CDN_BASE_URL}}/gym-door-bridge-linux-arm64",
+        "sha256": "{{LINUX_ARM64_SHA256}}",
+        "size": {{LINUX_ARM64_SIZE}},
+        "signature": "{{LINUX_ARM64_SIGNATURE}}"
+      }
+    }
+  },
+  "features": {
+    "newFeatures": [
+      {{NEW_FEATURES}}
+    ],
+    "improvements": [
+      {{IMPROVEMENTS}}
+    ],
+    "bugFixes": [
+      {{BUG_FIXES}}
+    ],
+    "securityFixes": [
+      {{SECURITY_FIXES}}
+    ]
+  },
+  "compatibility": {
+    "breakingChanges": {{BREAKING_CHANGES}},
+    "deprecations": [
+      {{DEPRECATIONS}}
+    ],
+    "migrations": [
+      {{MIGRATIONS}}
+    ]
+  },
+  "rollback": {
+    "enabled": {{ROLLBACK_ENABLED}},
+    "previousVersion": "{{PREVIOUS_VERSION}}",
+    "rollbackUrl": "{{ROLLBACK_URL}}"
+  },
+  "metadata": {
+    "buildNumber": "{{BUILD_NUMBER}}",
+    "commitHash": "{{COMMIT_HASH}}",
+    "buildTime": "{{BUILD_TIME}}",
+    "releaseNotes": "{{RELEASE_NOTES_URL}}",
+    "documentation": "{{DOCUMENTATION_URL}}"
+  }
+}

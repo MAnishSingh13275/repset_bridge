@@ -1,0 +1,466 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  GO_VERSION: '1.21'
+  PROJECT_NAME: gym-door-bridge
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libsqlite3-dev
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: make test
+
+    - name: Run integration tests
+      run: make test-integration
+
+    - name: Generate coverage report
+      run: make test-coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run Gosec Security Scanner
+      uses: securecodewarrior/github-action-gosec@master
+      with:
+        args: './...'
+
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    needs: [test, lint]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact_name: gym-door-bridge-linux-amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact_name: gym-door-bridge-windows-amd64.exe
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact_name: gym-door-bridge-darwin-amd64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Install build dependencies (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libsqlite3-dev gcc-mingw-w64
+
+    - name: Install build dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install sqlite3
+
+    - name: Install build dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install sqlite
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 1
+      run: |
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+        
+        go build \
+          -trimpath \
+          -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.commitHash=${COMMIT_HASH}" \
+          -o ${{ matrix.artifact_name }} \
+          ./cmd
+
+    - name: Sign Windows binary
+      if: matrix.os == 'windows-latest' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      env:
+        WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+        WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+      run: |
+        if ($env:WINDOWS_CERT_BASE64 -and $env:WINDOWS_CERT_PASSWORD) {
+          # Decode certificate
+          $certBytes = [System.Convert]::FromBase64String($env:WINDOWS_CERT_BASE64)
+          [System.IO.File]::WriteAllBytes("cert.p12", $certBytes)
+          
+          # Sign binary (requires Windows SDK)
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22000.0\x64\signtool.exe" sign `
+            /f cert.p12 `
+            /p $env:WINDOWS_CERT_PASSWORD `
+            /n "${{ env.PROJECT_NAME }}" `
+            /d "Gym Door Access Bridge" `
+            /du "https://yourdomain.com" `
+            /t "http://timestamp.digicert.com" `
+            ${{ matrix.artifact_name }}
+          
+          Remove-Item cert.p12
+        } else {
+          Write-Host "Windows signing certificate not available, skipping signing"
+        }
+
+    - name: Sign macOS binary
+      if: matrix.os == 'macos-latest' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      env:
+        MACOS_CERT_ID: ${{ secrets.MACOS_CERT_ID }}
+        MACOS_NOTARY_USER: ${{ secrets.MACOS_NOTARY_USER }}
+        MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+      run: |
+        if [ -n "$MACOS_CERT_ID" ]; then
+          # Sign binary
+          codesign --force --sign "$MACOS_CERT_ID" ${{ matrix.artifact_name }}
+          
+          # Notarize if credentials are available
+          if [ -n "$MACOS_NOTARY_USER" ] && [ -n "$MACOS_NOTARY_PASSWORD" ]; then
+            zip ${{ matrix.artifact_name }}.zip ${{ matrix.artifact_name }}
+            xcrun altool --notarize-app \
+              --primary-bundle-id "com.yourdomain.${{ env.PROJECT_NAME }}" \
+              --username "$MACOS_NOTARY_USER" \
+              --password "$MACOS_NOTARY_PASSWORD" \
+              --file ${{ matrix.artifact_name }}.zip
+            rm ${{ matrix.artifact_name }}.zip
+          fi
+        else
+          echo "macOS signing certificate not available, skipping signing"
+        fi
+
+    - name: Generate checksum
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          certutil -hashfile ${{ matrix.artifact_name }} SHA256 > ${{ matrix.artifact_name }}.sha256
+        else
+          sha256sum ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: |
+          ${{ matrix.artifact_name }}
+          ${{ matrix.artifact_name }}.sha256
+
+  build-cross:
+    name: Cross-compile
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: arm64
+            artifact_name: gym-door-bridge-linux-arm64
+          - goos: windows
+            goarch: 386
+            artifact_name: gym-door-bridge-windows-386.exe
+          - goos: darwin
+            goarch: arm64
+            artifact_name: gym-door-bridge-darwin-arm64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Install cross-compilation dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libsqlite3-dev gcc-mingw-w64 gcc-aarch64-linux-gnu
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 1
+      run: |
+        # Set cross-compilation environment
+        case "${{ matrix.goos }}-${{ matrix.goarch }}" in
+          "linux-arm64")
+            export CC=aarch64-linux-gnu-gcc
+            ;;
+          "windows-386")
+            export CC=i686-w64-mingw32-gcc
+            ;;
+          "windows-amd64")
+            export CC=x86_64-w64-mingw32-gcc
+            ;;
+        esac
+        
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+        
+        go build \
+          -trimpath \
+          -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.commitHash=${COMMIT_HASH}" \
+          -o ${{ matrix.artifact_name }} \
+          ./cmd
+
+    - name: Generate checksum
+      run: sha256sum ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: |
+          ${{ matrix.artifact_name }}
+          ${{ matrix.artifact_name }}.sha256
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Docker Hub
+      if: github.event_name == 'push'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKER_USERNAME }}/${{ env.PROJECT_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name == 'push' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          VERSION=${{ github.ref_name }}
+          BUILD_TIME=${{ github.event.head_commit.timestamp }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build, build-cross, docker]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+
+    - name: Prepare release assets
+      run: |
+        mkdir -p release
+        find artifacts -type f -name "gym-door-bridge-*" -exec cp {} release/ \;
+        
+        # Create checksums file
+        cd release
+        sha256sum gym-door-bridge-* > checksums.txt
+        cd ..
+
+    - name: Generate manifest
+      env:
+        VERSION: ${{ github.ref_name }}
+        CDN_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+      run: |
+        chmod +x scripts/generate-manifest.sh
+        mkdir -p dist
+        ./scripts/generate-manifest.sh
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        # Extract release notes from CHANGELOG.md or generate from commits
+        if [ -f CHANGELOG.md ]; then
+          # Extract notes for this version from CHANGELOG.md
+          awk '/^## \[${{ github.ref_name }}\]/{flag=1; next} /^## \[/{flag=0} flag' CHANGELOG.md > release_notes.md
+        else
+          # Generate from git commits
+          git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD > release_notes.md
+        fi
+        
+        # Set output for GitHub release
+        echo "notes<<EOF" >> $GITHUB_OUTPUT
+        cat release_notes.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release/*
+          dist/manifest.json
+        body: ${{ steps.release_notes.outputs.notes }}
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update latest manifest
+      if: "!contains(github.ref_name, '-')"
+      run: |
+        # Copy manifest to latest for stable releases
+        cp dist/manifest.json dist/manifest-latest.json
+
+    - name: Deploy to CDN
+      if: secrets.CDN_DEPLOY_KEY
+      env:
+        CDN_DEPLOY_KEY: ${{ secrets.CDN_DEPLOY_KEY }}
+        CDN_ENDPOINT: ${{ secrets.CDN_ENDPOINT }}
+      run: |
+        # Deploy binaries and manifest to CDN
+        # This would typically use rsync, aws s3, or similar
+        echo "Deploying to CDN..."
+        # rsync -avz --delete release/ user@cdn.yourdomain.com:/var/www/gym-door-bridge/
+        # aws s3 sync release/ s3://your-bucket/gym-door-bridge/ --delete
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: always() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+    - name: Notify Slack
+      if: secrets.SLACK_WEBHOOK_URL
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ needs.release.result }}
+        channel: '#releases'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Teams
+      if: secrets.TEAMS_WEBHOOK_URL
+      uses: skitionek/notify-microsoft-teams@master
+      with:
+        webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        needs: ${{ toJson(needs) }}
+        job: ${{ toJson(job) }}
+        steps: ${{ toJson(steps) }}

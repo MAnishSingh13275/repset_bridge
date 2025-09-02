@@ -1,0 +1,411 @@
+package load
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"gym-door-bridge/internal/config"
+	"gym-door-bridge/internal/database"
+	"gym-door-bridge/internal/processor"
+	"gym-door-bridge/internal/queue"
+	"gym-door-bridge/internal/tier"
+	"gym-door-bridge/internal/types"
+)
+
+// PerformanceTierTestSuite tests load handling across different performance tiers
+type PerformanceTierTestSuite struct {
+	suite.Suite
+	tempDir string
+}
+
+func TestPerformanceTierSuite(t *testing.T) {
+	suite.Run(t, new(PerformanceTierTestSuite))
+}
+
+func (s *PerformanceTierTestSuite) SetupSuite() {
+	var err error
+	s.tempDir, err = os.MkdirTemp("", "bridge_load_test")
+	s.Require().NoError(err)
+}
+
+func (s *PerformanceTierTestSuite) TearDownSuite() {
+	os.RemoveAll(s.tempDir)
+}
+
+// TestLiteTierPerformance tests performance characteristics of Lite tier
+func (s *PerformanceTierTestSuite) TestLiteTierPerformance() {
+	cfg := s.createTierConfig("lite", 1000) // Lite tier: 1k queue limit
+	
+	results := s.runLoadTest(cfg, LoadTestParams{
+		EventCount:       2000, // Exceed queue limit
+		ConcurrentWorkers: 2,   // Limited concurrency for Lite
+		Duration:         10 * time.Second,
+		ExpectedQueueLimit: 1000,
+	})
+
+	// Lite tier should handle basic load but with limitations
+	s.Assert().LessOrEqual(results.QueuePeakSize, 1000, "Lite tier should enforce 1k queue limit")
+	s.Assert().Greater(results.EventsProcessed, 500, "Should process reasonable number of events")
+	s.Assert().LessOrEqual(results.AvgProcessingTime, 50*time.Millisecond, "Processing should be reasonably fast")
+}
+
+// TestNormalTierPerformance tests performance characteristics of Normal tier
+func (s *PerformanceTierTestSuite) TestNormalTierPerformance() {
+	cfg := s.createTierConfig("normal", 10000) // Normal tier: 10k queue limit
+	
+	results := s.runLoadTest(cfg, LoadTestParams{
+		EventCount:       15000, // Exceed queue limit
+		ConcurrentWorkers: 4,    // Moderate concurrency
+		Duration:         15 * time.Second,
+		ExpectedQueueLimit: 10000,
+	})
+
+	// Normal tier should handle moderate load efficiently
+	s.Assert().LessOrEqual(results.QueuePeakSize, 10000, "Normal tier should enforce 10k queue limit")
+	s.Assert().Greater(results.EventsProcessed, 5000, "Should process significant number of events")
+	s.Assert().LessOrEqual(results.AvgProcessingTime, 20*time.Millisecond, "Processing should be fast")
+	s.Assert().Greater(results.ThroughputEPS, 100.0, "Should achieve good throughput")
+}
+
+// TestFullTierPerformance tests performance characteristics of Full tier
+func (s *PerformanceTierTestSuite) TestFullTierPerformance() {
+	cfg := s.createTierConfig("full", 50000) // Full tier: 50k queue limit
+	
+	results := s.runLoadTest(cfg, LoadTestParams{
+		EventCount:       75000, // Exceed queue limit
+		ConcurrentWorkers: 8,    // High concurrency
+		Duration:         20 * time.Second,
+		ExpectedQueueLimit: 50000,
+	})
+
+	// Full tier should handle high load with best performance
+	s.Assert().LessOrEqual(results.QueuePeakSize, 50000, "Full tier should enforce 50k queue limit")
+	s.Assert().Greater(results.EventsProcessed, 20000, "Should process large number of events")
+	s.Assert().LessOrEqual(results.AvgProcessingTime, 10*time.Millisecond, "Processing should be very fast")
+	s.Assert().Greater(results.ThroughputEPS, 500.0, "Should achieve high throughput")
+}
+
+// TestQueueCapacityLimits tests FIFO eviction when queue limits are reached
+func (s *PerformanceTierTestSuite) TestQueueCapacityLimits() {
+	cfg := s.createTierConfig("lite", 100) // Small queue for testing
+	
+	db, err := database.NewConnection(filepath.Join(s.tempDir, "capacity_test.db"))
+	s.Require().NoError(err)
+	defer db.Close()
+
+	err = database.RunMigrations(db)
+	s.Require().NoError(err)
+
+	queueManager, err := queue.NewManager(db, cfg.Queue)
+	s.Require().NoError(err)
+
+	eventProcessor, err := processor.NewEventProcessor("test-device", queueManager)
+	s.Require().NoError(err)
+
+	// Generate events beyond capacity
+	var firstEventID string
+	for i := 0; i < 150; i++ {
+		event := types.RawHardwareEvent{
+			ExternalUserID: fmt.Sprintf("user%d", i),
+			Timestamp:      time.Now().Add(time.Duration(i) * time.Millisecond),
+			EventType:      "entry",
+		}
+
+		err = eventProcessor.ProcessEvent(event)
+		s.Require().NoError(err)
+
+		if i == 0 {
+			// Remember first event to check if it gets evicted
+			events, _ := queueManager.GetPendingEvents(1)
+			if len(events) > 0 {
+				firstEventID = events[0].EventID
+			}
+		}
+	}
+
+	// Verify queue size is at limit
+	queueDepth, err := queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().LessOrEqual(queueDepth, 100, "Queue should not exceed capacity")
+
+	// Verify FIFO eviction - first event should be gone
+	if firstEventID != "" {
+		events, err := queueManager.GetPendingEvents(200)
+		s.Require().NoError(err)
+		
+		found := false
+		for _, event := range events {
+			if event.EventID == firstEventID {
+				found = true
+				break
+			}
+		}
+		s.Assert().False(found, "Oldest events should be evicted when capacity is exceeded")
+	}
+}
+
+// TestConcurrentEventProcessing tests handling of concurrent event processing
+func (s *PerformanceTierTestSuite) TestConcurrentEventProcessing() {
+	cfg := s.createTierConfig("normal", 5000)
+	
+	db, err := database.NewConnection(filepath.Join(s.tempDir, "concurrent_test.db"))
+	s.Require().NoError(err)
+	defer db.Close()
+
+	err = database.RunMigrations(db)
+	s.Require().NoError(err)
+
+	queueManager, err := queue.NewManager(db, cfg.Queue)
+	s.Require().NoError(err)
+
+	eventProcessor, err := processor.NewEventProcessor("test-device", queueManager)
+	s.Require().NoError(err)
+
+	// Process events concurrently
+	const numWorkers = 10
+	const eventsPerWorker = 100
+	
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	for worker := 0; worker < numWorkers; worker++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			
+			for i := 0; i < eventsPerWorker; i++ {
+				event := types.RawHardwareEvent{
+					ExternalUserID: fmt.Sprintf("worker%d_user%d", workerID, i),
+					Timestamp:      time.Now(),
+					EventType:      "entry",
+					RawData: map[string]interface{}{
+						"worker": workerID,
+						"seq":    i,
+					},
+				}
+
+				err := eventProcessor.ProcessEvent(event)
+				s.Require().NoError(err)
+			}
+		}(worker)
+	}
+
+	wg.Wait()
+	processingTime := time.Since(startTime)
+
+	// Verify all events were processed
+	queueDepth, err := queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Equal(numWorkers*eventsPerWorker, queueDepth, "All events should be queued")
+
+	// Verify reasonable performance under concurrency
+	expectedMaxTime := 5 * time.Second
+	s.Assert().Less(processingTime, expectedMaxTime, "Concurrent processing should complete in reasonable time")
+
+	// Verify no data corruption
+	events, err := queueManager.GetPendingEvents(numWorkers * eventsPerWorker)
+	s.Require().NoError(err)
+	
+	uniqueEvents := make(map[string]bool)
+	for _, event := range events {
+		key := fmt.Sprintf("%s-%s", event.ExternalUserID, event.EventID)
+		s.Assert().False(uniqueEvents[key], "Should not have duplicate events")
+		uniqueEvents[key] = true
+	}
+}
+
+// TestMemoryUsageUnderLoad tests memory consumption during high load
+func (s *PerformanceTierTestSuite) TestMemoryUsageUnderLoad() {
+	cfg := s.createTierConfig("full", 10000)
+	
+	// Measure initial memory
+	runtime.GC()
+	var initialMem runtime.MemStats
+	runtime.ReadMemStats(&initialMem)
+
+	results := s.runLoadTest(cfg, LoadTestParams{
+		EventCount:       20000,
+		ConcurrentWorkers: 6,
+		Duration:         10 * time.Second,
+		ExpectedQueueLimit: 10000,
+	})
+
+	// Measure final memory
+	runtime.GC()
+	var finalMem runtime.MemStats
+	runtime.ReadMemStats(&finalMem)
+
+	memoryIncrease := finalMem.Alloc - initialMem.Alloc
+	memoryIncreaseKB := memoryIncrease / 1024
+
+	s.T().Logf("Memory increase: %d KB", memoryIncreaseKB)
+	s.T().Logf("Events processed: %d", results.EventsProcessed)
+	s.T().Logf("Peak queue size: %d", results.QueuePeakSize)
+
+	// Memory usage should be reasonable (less than 50MB increase for this test)
+	s.Assert().Less(memoryIncreaseKB, int64(50*1024), "Memory usage should remain reasonable under load")
+}
+
+// LoadTestParams defines parameters for load testing
+type LoadTestParams struct {
+	EventCount         int
+	ConcurrentWorkers  int
+	Duration           time.Duration
+	ExpectedQueueLimit int
+}
+
+// LoadTestResults contains results from load testing
+type LoadTestResults struct {
+	EventsProcessed    int
+	QueuePeakSize      int
+	AvgProcessingTime  time.Duration
+	ThroughputEPS      float64
+	ErrorCount         int
+}
+
+func (s *PerformanceTierTestSuite) createTierConfig(tierName string, queueSize int) *config.Config {
+	return &config.Config{
+		Database: config.DatabaseConfig{
+			Path: filepath.Join(s.tempDir, fmt.Sprintf("%s_tier_test.db", tierName)),
+		},
+		Queue: config.QueueConfig{
+			MaxSize:    queueSize,
+			BatchSize:  50,
+			RetryDelay: 100 * time.Millisecond,
+			MaxRetries: 3,
+		},
+		Device: config.DeviceConfig{
+			ID:  fmt.Sprintf("test-device-%s", tierName),
+			Key: "test-key",
+		},
+		Performance: config.PerformanceConfig{
+			Tier: tierName,
+		},
+	}
+}
+
+func (s *PerformanceTierTestSuite) runLoadTest(cfg *config.Config, params LoadTestParams) LoadTestResults {
+	// Setup database
+	db, err := database.NewConnection(cfg.Database.Path)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	err = database.RunMigrations(db)
+	s.Require().NoError(err)
+
+	// Setup components
+	queueManager, err := queue.NewManager(db, cfg.Queue)
+	s.Require().NoError(err)
+
+	eventProcessor, err := processor.NewEventProcessor(cfg.Device.ID, queueManager)
+	s.Require().NoError(err)
+
+	// Run load test
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errorCount int
+	var processedCount int
+	var processingTimes []time.Duration
+	
+	startTime := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), params.Duration)
+	defer cancel()
+
+	// Start workers
+	for worker := 0; worker < params.ConcurrentWorkers; worker++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			
+			eventCount := params.EventCount / params.ConcurrentWorkers
+			for i := 0; i < eventCount; i++ {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				event := types.RawHardwareEvent{
+					ExternalUserID: fmt.Sprintf("load_test_user_%d_%d", workerID, i),
+					Timestamp:      time.Now(),
+					EventType:      "entry",
+					RawData: map[string]interface{}{
+						"load_test": true,
+						"worker":    workerID,
+						"sequence":  i,
+					},
+				}
+
+				processingStart := time.Now()
+				err := eventProcessor.ProcessEvent(event)
+				processingDuration := time.Since(processingStart)
+
+				mu.Lock()
+				if err != nil {
+					errorCount++
+				} else {
+					processedCount++
+					processingTimes = append(processingTimes, processingDuration)
+				}
+				mu.Unlock()
+			}
+		}(worker)
+	}
+
+	// Monitor queue size
+	var peakQueueSize int
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if queueDepth, err := queueManager.GetQueueDepth(); err == nil {
+					mu.Lock()
+					if queueDepth > peakQueueSize {
+						peakQueueSize = queueDepth
+					}
+					mu.Unlock()
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	totalDuration := time.Since(startTime)
+
+	// Calculate average processing time
+	var avgProcessingTime time.Duration
+	if len(processingTimes) > 0 {
+		var total time.Duration
+		for _, t := range processingTimes {
+			total += t
+		}
+		avgProcessingTime = total / time.Duration(len(processingTimes))
+	}
+
+	// Calculate throughput
+	throughput := float64(processedCount) / totalDuration.Seconds()
+
+	return LoadTestResults{
+		EventsProcessed:   processedCount,
+		QueuePeakSize:     peakQueueSize,
+		AvgProcessingTime: avgProcessingTime,
+		ThroughputEPS:     throughput,
+		ErrorCount:        errorCount,
+	}
+}

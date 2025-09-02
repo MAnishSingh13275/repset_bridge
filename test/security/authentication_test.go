@@ -1,0 +1,492 @@
+package security
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"gym-door-bridge/internal/auth"
+	"gym-door-bridge/internal/client"
+	"gym-door-bridge/internal/config"
+	"gym-door-bridge/internal/types"
+)
+
+// AuthenticationSecurityTestSuite tests security aspects of authentication flows
+type AuthenticationSecurityTestSuite struct {
+	suite.Suite
+	validDeviceID  string
+	validDeviceKey string
+	mockServer     *httptest.Server
+}
+
+func TestAuthenticationSecuritySuite(t *testing.T) {
+	suite.Run(t, new(AuthenticationSecurityTestSuite))
+}
+
+func (s *AuthenticationSecurityTestSuite) SetupSuite() {
+	s.validDeviceID = "test-device-secure-123"
+	s.validDeviceKey = "super-secret-hmac-key-for-security-testing-12345"
+	s.setupMockServer()
+}
+
+func (s *AuthenticationSecurityTestSuite) TearDownSuite() {
+	if s.mockServer != nil {
+		s.mockServer.Close()
+	}
+}
+
+func (s *AuthenticationSecurityTestSuite) setupMockServer() {
+	mux := http.NewServeMux()
+
+	// Secure endpoint that validates HMAC
+	mux.HandleFunc("/api/v1/checkin", func(w http.ResponseWriter, r *http.Request) {
+		deviceID := r.Header.Get("X-Device-ID")
+		signature := r.Header.Get("X-Signature")
+		timestamp := r.Header.Get("X-Timestamp")
+
+		// Read body
+		var bodyBytes bytes.Buffer
+		bodyBytes.ReadFrom(r.Body)
+		body := bodyBytes.String()
+
+		// Validate HMAC
+		if !s.validateHMAC(deviceID, signature, timestamp, body) {
+			http.Error(w, "Invalid authentication", http.StatusUnauthorized)
+			return
+		}
+
+		// Return success
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
+	})
+
+	// Pairing endpoint
+	mux.HandleFunc("/api/v1/devices/pair", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		pairCode, ok := req["pairCode"].(string)
+		if !ok || pairCode != "VALID123" {
+			http.Error(w, "Invalid pair code", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"deviceId":  s.validDeviceID,
+			"deviceKey": s.validDeviceKey,
+		})
+	})
+
+	s.mockServer = httptest.NewServer(mux)
+}
+
+func (s *AuthenticationSecurityTestSuite) validateHMAC(deviceID, signature, timestamp, body string) bool {
+	// Validate timestamp (within 5 minutes)
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	
+	now := time.Now().Unix()
+	if abs(now-ts) > 300 { // 5 minutes
+		return false
+	}
+
+	// Validate device ID
+	if deviceID != s.validDeviceID {
+		return false
+	}
+
+	// Calculate expected HMAC
+	message := body + timestamp + deviceID
+	mac := hmac.New(sha256.New, []byte(s.validDeviceKey))
+	mac.Write([]byte(message))
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+
+	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+func abs(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// TestValidHMACAuthentication tests successful HMAC authentication
+func (s *AuthenticationSecurityTestSuite) TestValidHMACAuthentication() {
+	authManager, err := auth.NewManager(s.validDeviceID, s.validDeviceKey)
+	s.Require().NoError(err)
+
+	cfg := &config.APIConfig{
+		BaseURL: s.mockServer.URL,
+		Timeout: 5 * time.Second,
+	}
+
+	apiClient, err := client.NewAPIClient(*cfg, authManager)
+	s.Require().NoError(err)
+
+	// Create test events
+	events := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	// Submit events with valid authentication
+	ctx := context.Background()
+	err = apiClient.SubmitEvents(ctx, events)
+	s.Assert().NoError(err, "Valid HMAC authentication should succeed")
+}
+
+// TestInvalidDeviceID tests rejection of invalid device IDs
+func (s *AuthenticationSecurityTestSuite) TestInvalidDeviceID() {
+	// Use wrong device ID
+	authManager, err := auth.NewManager("wrong-device-id", s.validDeviceKey)
+	s.Require().NoError(err)
+
+	cfg := &config.APIConfig{
+		BaseURL: s.mockServer.URL,
+		Timeout: 5 * time.Second,
+	}
+
+	apiClient, err := client.NewAPIClient(*cfg, authManager)
+	s.Require().NoError(err)
+
+	events := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       "wrong-device-id",
+		},
+	}
+
+	ctx := context.Background()
+	err = apiClient.SubmitEvents(ctx, events)
+	s.Assert().Error(err, "Invalid device ID should be rejected")
+	s.Assert().Contains(err.Error(), "401", "Should return 401 Unauthorized")
+}
+
+// TestInvalidHMACKey tests rejection of invalid HMAC keys
+func (s *AuthenticationSecurityTestSuite) TestInvalidHMACKey() {
+	// Use wrong HMAC key
+	authManager, err := auth.NewManager(s.validDeviceID, "wrong-hmac-key")
+	s.Require().NoError(err)
+
+	cfg := &config.APIConfig{
+		BaseURL: s.mockServer.URL,
+		Timeout: 5 * time.Second,
+	}
+
+	apiClient, err := client.NewAPIClient(*cfg, authManager)
+	s.Require().NoError(err)
+
+	events := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	ctx := context.Background()
+	err = apiClient.SubmitEvents(ctx, events)
+	s.Assert().Error(err, "Invalid HMAC key should be rejected")
+	s.Assert().Contains(err.Error(), "401", "Should return 401 Unauthorized")
+}
+
+// TestTimestampValidation tests timestamp-based replay attack protection
+func (s *AuthenticationSecurityTestSuite) TestTimestampValidation() {
+	authManager, err := auth.NewManager(s.validDeviceID, s.validDeviceKey)
+	s.Require().NoError(err)
+
+	// Create request with old timestamp (simulate replay attack)
+	oldTimestamp := time.Now().Add(-10 * time.Minute).Unix()
+	
+	events := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"events": events,
+	})
+	s.Require().NoError(err)
+
+	// Manually create request with old timestamp
+	req, err := http.NewRequest("POST", s.mockServer.URL+"/api/v1/checkin", bytes.NewReader(body))
+	s.Require().NoError(err)
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Device-ID", s.validDeviceID)
+	req.Header.Set("X-Timestamp", strconv.FormatInt(oldTimestamp, 10))
+
+	// Calculate HMAC with old timestamp
+	message := string(body) + strconv.FormatInt(oldTimestamp, 10) + s.validDeviceID
+	mac := hmac.New(sha256.New, []byte(s.validDeviceKey))
+	mac.Write([]byte(message))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	req.Header.Set("X-Signature", signature)
+
+	// Send request
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	s.Require().NoError(err)
+	defer resp.Body.Close()
+
+	// Should be rejected due to old timestamp
+	s.Assert().Equal(http.StatusUnauthorized, resp.StatusCode, "Old timestamp should be rejected")
+}
+
+// TestPairCodeSecurity tests device pairing security
+func (s *AuthenticationSecurityTestSuite) TestPairCodeSecurity() {
+	cfg := &config.APIConfig{
+		BaseURL: s.mockServer.URL,
+		Timeout: 5 * time.Second,
+	}
+
+	// Test valid pair code
+	deviceInfo := map[string]interface{}{
+		"hostname": "test-host",
+		"platform": "test",
+		"version":  "1.0.0",
+	}
+
+	deviceID, deviceKey, err := client.PairDevice(*cfg, "VALID123", deviceInfo)
+	s.Assert().NoError(err, "Valid pair code should succeed")
+	s.Assert().Equal(s.validDeviceID, deviceID)
+	s.Assert().Equal(s.validDeviceKey, deviceKey)
+
+	// Test invalid pair code
+	_, _, err = client.PairDevice(*cfg, "INVALID", deviceInfo)
+	s.Assert().Error(err, "Invalid pair code should be rejected")
+}
+
+// TestHMACKeyRotation tests key rotation security
+func (s *AuthenticationSecurityTestSuite) TestHMACKeyRotation() {
+	// Initial authentication with old key
+	oldKey := "old-hmac-key-123"
+	authManager, err := auth.NewManager(s.validDeviceID, oldKey)
+	s.Require().NoError(err)
+
+	// Rotate to new key
+	newKey := s.validDeviceKey
+	err = authManager.RotateKey(newKey)
+	s.Require().NoError(err)
+
+	// Verify new key works
+	cfg := &config.APIConfig{
+		BaseURL: s.mockServer.URL,
+		Timeout: 5 * time.Second,
+	}
+
+	apiClient, err := client.NewAPIClient(*cfg, authManager)
+	s.Require().NoError(err)
+
+	events := []types.StandardEvent{
+		{
+			EventID:        "test-event-rotation",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	ctx := context.Background()
+	err = apiClient.SubmitEvents(ctx, events)
+	s.Assert().NoError(err, "New key after rotation should work")
+}
+
+// TestConcurrentAuthenticationRequests tests authentication under concurrent load
+func (s *AuthenticationSecurityTestSuite) TestConcurrentAuthenticationRequests() {
+	authManager, err := auth.NewManager(s.validDeviceID, s.validDeviceKey)
+	s.Require().NoError(err)
+
+	cfg := &config.APIConfig{
+		BaseURL: s.mockServer.URL,
+		Timeout: 5 * time.Second,
+	}
+
+	apiClient, err := client.NewAPIClient(*cfg, authManager)
+	s.Require().NoError(err)
+
+	// Send multiple concurrent requests
+	const numRequests = 20
+	results := make(chan error, numRequests)
+
+	for i := 0; i < numRequests; i++ {
+		go func(requestID int) {
+			events := []types.StandardEvent{
+				{
+					EventID:        fmt.Sprintf("concurrent-test-%d", requestID),
+					ExternalUserID: fmt.Sprintf("user%d", requestID),
+					Timestamp:      time.Now(),
+					EventType:      "entry",
+					DeviceID:       s.validDeviceID,
+				},
+			}
+
+			ctx := context.Background()
+			err := apiClient.SubmitEvents(ctx, events)
+			results <- err
+		}(i)
+	}
+
+	// Collect results
+	var successCount, errorCount int
+	for i := 0; i < numRequests; i++ {
+		err := <-results
+		if err != nil {
+			errorCount++
+		} else {
+			successCount++
+		}
+	}
+
+	// All requests should succeed (no race conditions in HMAC generation)
+	s.Assert().Equal(numRequests, successCount, "All concurrent requests should succeed")
+	s.Assert().Equal(0, errorCount, "No requests should fail due to race conditions")
+}
+
+// TestSignatureManipulationAttack tests protection against signature manipulation
+func (s *AuthenticationSecurityTestSuite) TestSignatureManipulationAttack() {
+	events := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"events": events,
+	})
+	s.Require().NoError(err)
+
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+
+	// Create valid signature
+	message := string(body) + timestamp + s.validDeviceID
+	mac := hmac.New(sha256.New, []byte(s.validDeviceKey))
+	mac.Write([]byte(message))
+	validSignature := hex.EncodeToString(mac.Sum(nil))
+
+	// Manipulate signature (flip one bit)
+	manipulatedSignature := validSignature
+	if len(manipulatedSignature) > 0 {
+		lastChar := manipulatedSignature[len(manipulatedSignature)-1]
+		if lastChar == 'a' {
+			manipulatedSignature = manipulatedSignature[:len(manipulatedSignature)-1] + "b"
+		} else {
+			manipulatedSignature = manipulatedSignature[:len(manipulatedSignature)-1] + "a"
+		}
+	}
+
+	// Send request with manipulated signature
+	req, err := http.NewRequest("POST", s.mockServer.URL+"/api/v1/checkin", bytes.NewReader(body))
+	s.Require().NoError(err)
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Device-ID", s.validDeviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", manipulatedSignature)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	s.Require().NoError(err)
+	defer resp.Body.Close()
+
+	// Should be rejected
+	s.Assert().Equal(http.StatusUnauthorized, resp.StatusCode, "Manipulated signature should be rejected")
+}
+
+// TestBodyManipulationAttack tests protection against body manipulation
+func (s *AuthenticationSecurityTestSuite) TestBodyManipulationAttack() {
+	originalEvents := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "user123",
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	originalBody, err := json.Marshal(map[string]interface{}{
+		"events": originalEvents,
+	})
+	s.Require().NoError(err)
+
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+
+	// Create signature for original body
+	message := string(originalBody) + timestamp + s.validDeviceID
+	mac := hmac.New(sha256.New, []byte(s.validDeviceKey))
+	mac.Write([]byte(message))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	// Manipulate body after signing
+	manipulatedEvents := []types.StandardEvent{
+		{
+			EventID:        "test-event-1",
+			ExternalUserID: "hacker456", // Changed user ID
+			Timestamp:      time.Now(),
+			EventType:      "entry",
+			DeviceID:       s.validDeviceID,
+		},
+	}
+
+	manipulatedBody, err := json.Marshal(map[string]interface{}{
+		"events": manipulatedEvents,
+	})
+	s.Require().NoError(err)
+
+	// Send request with manipulated body but original signature
+	req, err := http.NewRequest("POST", s.mockServer.URL+"/api/v1/checkin", bytes.NewReader(manipulatedBody))
+	s.Require().NoError(err)
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Device-ID", s.validDeviceID)
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", signature)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	s.Require().NoError(err)
+	defer resp.Body.Close()
+
+	// Should be rejected
+	s.Assert().Equal(http.StatusUnauthorized, resp.StatusCode, "Manipulated body should be rejected")
+}

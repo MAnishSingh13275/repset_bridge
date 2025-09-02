@@ -1,0 +1,549 @@
+package e2e
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"gym-door-bridge/internal/adapters"
+	"gym-door-bridge/internal/auth"
+	"gym-door-bridge/internal/client"
+	"gym-door-bridge/internal/config"
+	"gym-door-bridge/internal/database"
+	"gym-door-bridge/internal/health"
+	"gym-door-bridge/internal/processor"
+	"gym-door-bridge/internal/queue"
+	"gym-door-bridge/internal/service"
+	"gym-door-bridge/internal/tier"
+	"gym-door-bridge/internal/updater"
+)
+
+// DeploymentScenariosTestSuite tests real-world deployment scenarios
+type DeploymentScenariosTestSuite struct {
+	suite.Suite
+	tempDir    string
+	mockServer *httptest.Server
+	testBinary string
+}
+
+func TestDeploymentScenariosSuite(t *testing.T) {
+	suite.Run(t, new(DeploymentScenariosTestSuite))
+}
+
+func (s *DeploymentScenariosTestSuite) SetupSuite() {
+	var err error
+	s.tempDir, err = os.MkdirTemp("", "bridge_e2e_test")
+	s.Require().NoError(err)
+
+	// Build test binary
+	s.buildTestBinary()
+	
+	// Setup mock cloud server
+	s.setupMockCloudServer()
+}
+
+func (s *DeploymentScenariosTestSuite) TearDownSuite() {
+	if s.mockServer != nil {
+		s.mockServer.Close()
+	}
+	os.RemoveAll(s.tempDir)
+}
+
+func (s *DeploymentScenariosTestSuite) buildTestBinary() {
+	binaryName := "gym-door-bridge-test"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	
+	s.testBinary = filepath.Join(s.tempDir, binaryName)
+	
+	cmd := exec.Command("go", "build", "-o", s.testBinary, "../../../cmd")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1") // Required for SQLite
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		s.T().Logf("Build output: %s", string(output))
+		s.Require().NoError(err, "Failed to build test binary")
+	}
+}
+
+func (s *DeploymentScenariosTestSuite) setupMockCloudServer() {
+	mux := http.NewServeMux()
+
+	// Device pairing endpoint
+	mux.HandleFunc("/api/v1/devices/pair", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"deviceId":  "e2e-test-device",
+			"deviceKey": "e2e-test-hmac-key-12345",
+			"config": map[string]interface{}{
+				"heartbeatInterval": 30,
+				"queueMaxSize":      5000,
+				"unlockDuration":    3000,
+			},
+		})
+	})
+
+	// Check-in endpoint
+	mux.HandleFunc("/api/v1/checkin", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   true,
+			"processed": 1,
+		})
+	})
+
+	// Heartbeat endpoint
+	mux.HandleFunc("/api/v1/devices/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
+	})
+
+	// Health endpoint
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "healthy",
+			"timestamp": time.Now().Unix(),
+		})
+	})
+
+	// Update manifest endpoint
+	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"version":     "1.0.0",
+			"downloadUrl": s.mockServer.URL + "/download/gym-door-bridge",
+			"checksum":    "mock-checksum",
+			"rolloutPercentage": 100,
+		})
+	})
+
+	s.mockServer = httptest.NewServer(mux)
+}
+
+// TestFreshInstallationScenario tests a complete fresh installation
+func (s *DeploymentScenariosTestSuite) TestFreshInstallationScenario() {
+	// Create installation directory
+	installDir := filepath.Join(s.tempDir, "fresh_install")
+	err := os.MkdirAll(installDir, 0755)
+	s.Require().NoError(err)
+
+	// Create configuration file
+	configPath := filepath.Join(installDir, "config.yaml")
+	configContent := fmt.Sprintf(`
+database:
+  path: %s
+api:
+  baseUrl: %s
+  timeout: 5s
+device:
+  id: ""
+  key: ""
+queue:
+  maxSize: 5000
+  batchSize: 10
+  retryDelay: 1s
+  maxRetries: 3
+adapters:
+  simulator:
+    enabled: true
+    config:
+      eventInterval: 1s
+performance:
+  tier: "auto"
+`, filepath.Join(installDir, "bridge.db"), s.mockServer.URL)
+
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
+	s.Require().NoError(err)
+
+	// Test pairing process
+	pairCmd := exec.Command(s.testBinary, "pair", "--config", configPath, "--pair-code", "TEST123")
+	pairOutput, err := pairCmd.CombinedOutput()
+	s.T().Logf("Pair output: %s", string(pairOutput))
+	s.Assert().NoError(err, "Device pairing should succeed")
+
+	// Verify device credentials were stored
+	cfg, err := config.LoadConfig(configPath)
+	s.Require().NoError(err)
+	s.Assert().NotEmpty(cfg.Device.ID, "Device ID should be set after pairing")
+	s.Assert().NotEmpty(cfg.Device.Key, "Device key should be set after pairing")
+
+	// Test that database was created and initialized
+	dbPath := filepath.Join(installDir, "bridge.db")
+	s.Assert().FileExists(dbPath, "Database should be created")
+
+	db, err := database.NewConnection(dbPath)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	// Verify database schema
+	var tableCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").Scan(&tableCount)
+	s.Require().NoError(err)
+	s.Assert().Greater(tableCount, 0, "Database should have tables")
+}
+
+// TestServiceLifecycleScenario tests service installation, start, stop, and uninstall
+func (s *DeploymentScenariosTestSuite) TestServiceLifecycleScenario() {
+	if runtime.GOOS == "windows" {
+		s.testWindowsServiceLifecycle()
+	} else if runtime.GOOS == "darwin" {
+		s.testMacOSServiceLifecycle()
+	} else {
+		s.T().Skip("Service lifecycle tests only supported on Windows and macOS")
+	}
+}
+
+func (s *DeploymentScenariosTestSuite) testWindowsServiceLifecycle() {
+	// Note: This test requires administrator privileges on Windows
+	// In a real CI environment, this would be run in a privileged container
+	
+	serviceDir := filepath.Join(s.tempDir, "windows_service")
+	err := os.MkdirAll(serviceDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(serviceDir, "config.yaml")
+	s.createTestConfig(configPath, serviceDir)
+
+	// Test service installation (would require admin privileges)
+	// For testing purposes, we'll just verify the service manager can be created
+	serviceMgr, err := service.NewWindowsServiceManager("GymDoorBridge", s.testBinary, configPath)
+	s.Assert().NoError(err, "Should be able to create Windows service manager")
+	s.Assert().NotNil(serviceMgr, "Service manager should not be nil")
+}
+
+func (s *DeploymentScenariosTestSuite) testMacOSServiceLifecycle() {
+	serviceDir := filepath.Join(s.tempDir, "macos_service")
+	err := os.MkdirAll(serviceDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(serviceDir, "config.yaml")
+	s.createTestConfig(configPath, serviceDir)
+
+	// Test daemon configuration
+	daemonMgr, err := service.NewMacOSDaemonManager("com.gym.door.bridge", s.testBinary, configPath)
+	s.Assert().NoError(err, "Should be able to create macOS daemon manager")
+	s.Assert().NotNil(daemonMgr, "Daemon manager should not be nil")
+
+	// Test plist generation
+	plistContent, err := daemonMgr.GeneratePlist()
+	s.Assert().NoError(err, "Should be able to generate plist")
+	s.Assert().Contains(plistContent, "com.gym.door.bridge", "Plist should contain service identifier")
+}
+
+// TestOfflineResilienceScenario tests behavior during network outages
+func (s *DeploymentScenariosTestSuite) TestOfflineResilienceScenario() {
+	scenarioDir := filepath.Join(s.tempDir, "offline_resilience")
+	err := os.MkdirAll(scenarioDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(scenarioDir, "config.yaml")
+	s.createTestConfig(configPath, scenarioDir)
+
+	// Initialize components
+	cfg, err := config.LoadConfig(configPath)
+	s.Require().NoError(err)
+
+	// Set device credentials for testing
+	cfg.Device.ID = "offline-test-device"
+	cfg.Device.Key = "offline-test-key"
+
+	db, err := database.NewConnection(cfg.Database.Path)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	err = database.RunMigrations(db)
+	s.Require().NoError(err)
+
+	// Setup components
+	queueManager, err := queue.NewManager(db, cfg.Queue)
+	s.Require().NoError(err)
+
+	eventProcessor, err := processor.NewEventProcessor(cfg.Device.ID, queueManager)
+	s.Require().NoError(err)
+
+	adapterManager, err := adapters.NewManager(cfg.Adapters, eventProcessor.ProcessEvent)
+	s.Require().NoError(err)
+
+	// Start generating events while "offline"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = adapterManager.StartAll(ctx)
+	s.Require().NoError(err)
+
+	// Let events accumulate
+	time.Sleep(2 * time.Second)
+
+	// Verify events are queued locally
+	queueDepth, err := queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Greater(queueDepth, 0, "Events should be queued while offline")
+
+	// Stop adapters
+	adapterManager.StopAll()
+
+	// Simulate coming back online
+	authManager, err := auth.NewManager(cfg.Device.ID, cfg.Device.Key)
+	s.Require().NoError(err)
+
+	apiClient, err := client.NewAPIClient(cfg.API, authManager)
+	s.Require().NoError(err)
+
+	// Replay queued events
+	events, err := queueManager.GetPendingEvents(100)
+	s.Require().NoError(err)
+
+	if len(events) > 0 {
+		err = apiClient.SubmitEvents(context.Background(), events)
+		s.Assert().NoError(err, "Should be able to replay events when back online")
+
+		// Mark events as sent
+		for _, event := range events {
+			err = queueManager.MarkEventSent(event.ID)
+			s.Require().NoError(err)
+		}
+	}
+
+	// Verify queue is cleared
+	finalQueueDepth, err := queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Equal(0, finalQueueDepth, "Queue should be empty after replay")
+}
+
+// TestPerformanceTierAdaptationScenario tests automatic tier adaptation
+func (s *DeploymentScenariosTestSuite) TestPerformanceTierAdaptationScenario() {
+	scenarioDir := filepath.Join(s.tempDir, "tier_adaptation")
+	err := os.MkdirAll(scenarioDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(scenarioDir, "config.yaml")
+	s.createTestConfig(configPath, scenarioDir)
+
+	// Test tier detection
+	tierManager, err := tier.NewManager()
+	s.Require().NoError(err)
+
+	currentTier := tierManager.GetCurrentTier()
+	s.Assert().Contains([]string{"lite", "normal", "full"}, currentTier, "Should detect a valid tier")
+
+	// Test tier-specific configuration
+	cfg, err := config.LoadConfig(configPath)
+	s.Require().NoError(err)
+
+	switch currentTier {
+	case "lite":
+		s.Assert().LessOrEqual(cfg.Queue.MaxSize, 1000, "Lite tier should have small queue")
+	case "normal":
+		s.Assert().LessOrEqual(cfg.Queue.MaxSize, 10000, "Normal tier should have medium queue")
+	case "full":
+		s.Assert().LessOrEqual(cfg.Queue.MaxSize, 50000, "Full tier should have large queue")
+	}
+}
+
+// TestHealthMonitoringScenario tests health monitoring and alerting
+func (s *DeploymentScenariosTestSuite) TestHealthMonitoringScenario() {
+	scenarioDir := filepath.Join(s.tempDir, "health_monitoring")
+	err := os.MkdirAll(scenarioDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(scenarioDir, "config.yaml")
+	s.createTestConfig(configPath, scenarioDir)
+
+	cfg, err := config.LoadConfig(configPath)
+	s.Require().NoError(err)
+
+	// Initialize health monitoring
+	healthManager, err := health.NewManager(cfg.Health)
+	s.Require().NoError(err)
+
+	// Test health check
+	healthStatus := healthManager.GetHealthStatus()
+	s.Assert().NotNil(healthStatus, "Should return health status")
+	s.Assert().NotEmpty(healthStatus.Status, "Status should not be empty")
+
+	// Test metrics collection
+	metrics := healthManager.GetMetrics()
+	s.Assert().NotNil(metrics, "Should return metrics")
+
+	// Test heartbeat functionality
+	authManager, err := auth.NewManager("test-device", "test-key")
+	s.Require().NoError(err)
+
+	apiClient, err := client.NewAPIClient(cfg.API, authManager)
+	s.Require().NoError(err)
+
+	heartbeatManager, err := health.NewHeartbeatManager(healthManager, apiClient, 30*time.Second)
+	s.Require().NoError(err)
+
+	// Start heartbeat (will fail due to auth, but tests the mechanism)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err = heartbeatManager.Start(ctx)
+	// We expect this to fail due to invalid auth, but it tests the heartbeat mechanism
+	s.T().Logf("Heartbeat start result: %v", err)
+}
+
+// TestUpdateMechanismScenario tests the update mechanism
+func (s *DeploymentScenariosTestSuite) TestUpdateMechanismScenario() {
+	scenarioDir := filepath.Join(s.tempDir, "update_mechanism")
+	err := os.MkdirAll(scenarioDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(scenarioDir, "config.yaml")
+	s.createTestConfig(configPath, scenarioDir)
+
+	cfg, err := config.LoadConfig(configPath)
+	s.Require().NoError(err)
+
+	// Test update checker
+	updateCfg := config.UpdateConfig{
+		ManifestURL:    s.mockServer.URL + "/manifest.json",
+		CheckInterval:  time.Hour,
+		CurrentVersion: "0.9.0", // Older version to trigger update
+	}
+
+	updater, err := updater.NewUpdater(updateCfg, s.testBinary)
+	s.Require().NoError(err)
+
+	// Check for updates
+	ctx := context.Background()
+	updateAvailable, manifest, err := updater.CheckForUpdates(ctx)
+	s.Assert().NoError(err, "Should be able to check for updates")
+	s.Assert().True(updateAvailable, "Should detect update available")
+	s.Assert().NotNil(manifest, "Should return update manifest")
+
+	if manifest != nil {
+		s.Assert().Equal("1.0.0", manifest.Version, "Should detect newer version")
+	}
+}
+
+// TestFailureRecoveryScenario tests recovery from various failure modes
+func (s *DeploymentScenariosTestSuite) TestFailureRecoveryScenario() {
+	scenarioDir := filepath.Join(s.tempDir, "failure_recovery")
+	err := os.MkdirAll(scenarioDir, 0755)
+	s.Require().NoError(err)
+
+	configPath := filepath.Join(scenarioDir, "config.yaml")
+	s.createTestConfig(configPath, scenarioDir)
+
+	cfg, err := config.LoadConfig(configPath)
+	s.Require().NoError(err)
+
+	// Test database corruption recovery
+	dbPath := cfg.Database.Path
+	
+	// Create and initialize database
+	db, err := database.NewConnection(dbPath)
+	s.Require().NoError(err)
+	
+	err = database.RunMigrations(db)
+	s.Require().NoError(err)
+	db.Close()
+
+	// Simulate database corruption by truncating file
+	err = os.Truncate(dbPath, 0)
+	s.Require().NoError(err)
+
+	// Test recovery
+	db, err = database.NewConnection(dbPath)
+	if err != nil {
+		// Expected - corrupted database
+		s.T().Logf("Database corruption detected: %v", err)
+		
+		// Remove corrupted database
+		os.Remove(dbPath)
+		
+		// Recreate database
+		db, err = database.NewConnection(dbPath)
+		s.Require().NoError(err)
+		
+		err = database.RunMigrations(db)
+		s.Assert().NoError(err, "Should be able to recover from database corruption")
+	}
+	
+	if db != nil {
+		db.Close()
+	}
+
+	// Test configuration file recovery
+	// Backup original config
+	configBackup := configPath + ".backup"
+	configData, err := os.ReadFile(configPath)
+	s.Require().NoError(err)
+	
+	err = os.WriteFile(configBackup, configData, 0644)
+	s.Require().NoError(err)
+
+	// Corrupt config file
+	err = os.WriteFile(configPath, []byte("invalid yaml content"), 0644)
+	s.Require().NoError(err)
+
+	// Test config loading (should fail)
+	_, err = config.LoadConfig(configPath)
+	s.Assert().Error(err, "Should detect corrupted config")
+
+	// Restore config
+	err = os.Rename(configBackup, configPath)
+	s.Require().NoError(err)
+
+	// Verify recovery
+	_, err = config.LoadConfig(configPath)
+	s.Assert().NoError(err, "Should recover from config corruption")
+}
+
+func (s *DeploymentScenariosTestSuite) createTestConfig(configPath, workDir string) {
+	configContent := fmt.Sprintf(`
+database:
+  path: %s
+api:
+  baseUrl: %s
+  timeout: 5s
+device:
+  id: "e2e-test-device"
+  key: "e2e-test-key"
+queue:
+  maxSize: 5000
+  batchSize: 10
+  retryDelay: 1s
+  maxRetries: 3
+adapters:
+  simulator:
+    enabled: true
+    config:
+      eventInterval: 500ms
+performance:
+  tier: "auto"
+health:
+  enabled: true
+  port: 8080
+update:
+  manifestUrl: %s/manifest.json
+  checkInterval: 1h
+  currentVersion: "1.0.0"
+`, filepath.Join(workDir, "bridge.db"), s.mockServer.URL, s.mockServer.URL)
+
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	s.Require().NoError(err)
+}

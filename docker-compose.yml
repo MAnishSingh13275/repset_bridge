@@ -1,0 +1,80 @@
+# Docker Compose configuration for Gym Door Access Bridge
+# Includes the bridge service with proper networking and volumes
+
+version: '3.8'
+
+services:
+  gym-door-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD_TIME: ${BUILD_TIME}
+    image: gym-door-bridge:${VERSION:-dev}
+    container_name: gym-door-bridge
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CONFIG_PATH=/app/config/config.yaml
+    
+    # Volumes
+    volumes:
+      - ./config.yaml:/app/config/config.yaml:ro
+      - bridge_data:/app/data
+      - bridge_logs:/app/logs
+    
+    # Ports
+    ports:
+      - "8080:8080"   # Health endpoint
+      - "8443:8443"   # HTTPS endpoint (if enabled)
+    
+    # Networks
+    networks:
+      - bridge_network
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    
+    # Security
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Volumes
+volumes:
+  bridge_data:
+    driver: local
+  bridge_logs:
+    driver: local
+
+# Networks
+networks:
+  bridge_network:
+    driver: bridge

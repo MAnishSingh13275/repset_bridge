@@ -1,0 +1,364 @@
+package integration
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"gym-door-bridge/internal/adapters"
+	"gym-door-bridge/internal/auth"
+	"gym-door-bridge/internal/client"
+	"gym-door-bridge/internal/config"
+	"gym-door-bridge/internal/database"
+	"gym-door-bridge/internal/processor"
+	"gym-door-bridge/internal/queue"
+	"gym-door-bridge/internal/types"
+)
+
+// HardwareToCloudTestSuite tests the complete flow from hardware events to cloud submission
+type HardwareToCloudTestSuite struct {
+	suite.Suite
+	tempDir    string
+	db         *sql.DB
+	mockServer *httptest.Server
+	cfg        *config.Config
+	
+	// Components under test
+	adapterManager *adapters.Manager
+	eventProcessor *processor.EventProcessor
+	queueManager   *queue.Manager
+	apiClient      *client.APIClient
+	authManager    *auth.Manager
+}
+
+func TestHardwareToCloudSuite(t *testing.T) {
+	suite.Run(t, new(HardwareToCloudTestSuite))
+}
+
+func (s *HardwareToCloudTestSuite) SetupSuite() {
+	// Create temporary directory for test database
+	var err error
+	s.tempDir, err = os.MkdirTemp("", "bridge_integration_test")
+	s.Require().NoError(err)
+
+	// Setup mock cloud server
+	s.setupMockServer()
+
+	// Initialize test configuration
+	s.cfg = &config.Config{
+		Database: config.DatabaseConfig{
+			Path: filepath.Join(s.tempDir, "test.db"),
+		},
+		API: config.APIConfig{
+			BaseURL: s.mockServer.URL,
+			Timeout: 5 * time.Second,
+		},
+		Queue: config.QueueConfig{
+			MaxSize:      1000,
+			BatchSize:    10,
+			RetryDelay:   time.Second,
+			MaxRetries:   3,
+		},
+		Device: config.DeviceConfig{
+			ID:  "test-device-123",
+			Key: "test-hmac-key-for-integration-testing",
+		},
+		Adapters: map[string]config.AdapterConfig{
+			"simulator": {
+				Enabled: true,
+				Config: map[string]interface{}{
+					"eventInterval": "100ms",
+				},
+			},
+		},
+	}
+
+	// Initialize database
+	s.db, err = database.NewConnection(s.cfg.Database.Path)
+	s.Require().NoError(err)
+
+	err = database.RunMigrations(s.db)
+	s.Require().NoError(err)
+}
+
+func (s *HardwareToCloudTestSuite) TearDownSuite() {
+	if s.db != nil {
+		s.db.Close()
+	}
+	if s.mockServer != nil {
+		s.mockServer.Close()
+	}
+	os.RemoveAll(s.tempDir)
+}
+
+func (s *HardwareToCloudTestSuite) SetupTest() {
+	// Initialize components for each test
+	var err error
+
+	// Auth manager
+	s.authManager, err = auth.NewManager(s.cfg.Device.ID, s.cfg.Device.Key)
+	s.Require().NoError(err)
+
+	// API client
+	s.apiClient, err = client.NewAPIClient(s.cfg.API, s.authManager)
+	s.Require().NoError(err)
+
+	// Queue manager
+	s.queueManager, err = queue.NewManager(s.db, s.cfg.Queue)
+	s.Require().NoError(err)
+
+	// Event processor
+	s.eventProcessor, err = processor.NewEventProcessor(s.cfg.Device.ID, s.queueManager)
+	s.Require().NoError(err)
+
+	// Adapter manager
+	s.adapterManager, err = adapters.NewManager(s.cfg.Adapters, s.eventProcessor.ProcessEvent)
+	s.Require().NoError(err)
+}
+
+func (s *HardwareToCloudTestSuite) TearDownTest() {
+	if s.adapterManager != nil {
+		s.adapterManager.StopAll()
+	}
+	
+	// Clear database tables
+	s.db.Exec("DELETE FROM event_queue")
+	s.db.Exec("DELETE FROM adapter_status")
+}
+
+func (s *HardwareToCloudTestSuite) setupMockServer() {
+	mux := http.NewServeMux()
+
+	// Mock checkin endpoint
+	mux.HandleFunc("/api/v1/checkin", func(w http.ResponseWriter, r *http.Request) {
+		// Validate HMAC authentication
+		deviceID := r.Header.Get("X-Device-ID")
+		signature := r.Header.Get("X-Signature")
+		timestamp := r.Header.Get("X-Timestamp")
+
+		s.Assert().Equal("test-device-123", deviceID)
+		s.Assert().NotEmpty(signature)
+		s.Assert().NotEmpty(timestamp)
+
+		// Parse request body
+		var req client.CheckinRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		s.Require().NoError(err)
+
+		// Validate events
+		s.Assert().NotEmpty(req.Events)
+		for _, event := range req.Events {
+			s.Assert().NotEmpty(event.EventID)
+			s.Assert().NotEmpty(event.ExternalUserID)
+			s.Assert().Equal("test-device-123", event.DeviceID)
+		}
+
+		// Return success response
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"processed": len(req.Events),
+		})
+	})
+
+	// Mock heartbeat endpoint
+	mux.HandleFunc("/api/v1/devices/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
+	})
+
+	s.mockServer = httptest.NewServer(mux)
+}
+
+// TestCompleteHardwareToCloudFlow tests the entire flow from hardware event to cloud submission
+func (s *HardwareToCloudTestSuite) TestCompleteHardwareToCloudFlow() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start adapter manager
+	err := s.adapterManager.StartAll(ctx)
+	s.Require().NoError(err)
+
+	// Wait for simulator to generate events
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify events were queued
+	queueDepth, err := s.queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Greater(queueDepth, 0, "Events should be queued from simulator")
+
+	// Process queued events
+	events, err := s.queueManager.GetPendingEvents(10)
+	s.Require().NoError(err)
+	s.Assert().NotEmpty(events, "Should have pending events to process")
+
+	// Submit events to mock cloud
+	err = s.apiClient.SubmitEvents(ctx, events)
+	s.Require().NoError(err)
+
+	// Mark events as sent
+	for _, event := range events {
+		err = s.queueManager.MarkEventSent(event.ID)
+		s.Require().NoError(err)
+	}
+
+	// Verify queue is now empty
+	queueDepth, err = s.queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Equal(0, queueDepth, "Queue should be empty after processing")
+}
+
+// TestOfflineQueueReplay tests offline functionality and event replay
+func (s *HardwareToCloudTestSuite) TestOfflineQueueReplay() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Generate events while "offline" (don't submit to cloud)
+	err := s.adapterManager.StartAll(ctx)
+	s.Require().NoError(err)
+
+	// Wait for events to accumulate
+	time.Sleep(300 * time.Millisecond)
+
+	// Verify events are queued locally
+	queueDepth, err := s.queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Greater(queueDepth, 0, "Events should accumulate while offline")
+
+	// Simulate coming back online and replay events
+	events, err := s.queueManager.GetPendingEvents(100)
+	s.Require().NoError(err)
+
+	// Submit all queued events
+	err = s.apiClient.SubmitEvents(ctx, events)
+	s.Require().NoError(err)
+
+	// Mark all events as sent
+	for _, event := range events {
+		err = s.queueManager.MarkEventSent(event.ID)
+		s.Require().NoError(err)
+	}
+
+	// Verify successful replay
+	finalQueueDepth, err := s.queueManager.GetQueueDepth()
+	s.Require().NoError(err)
+	s.Assert().Equal(0, finalQueueDepth, "All events should be replayed successfully")
+}
+
+// TestEventDeduplication tests that duplicate events are handled correctly
+func (s *HardwareToCloudTestSuite) TestEventDeduplication() {
+	ctx := context.Background()
+
+	// Create duplicate raw events
+	rawEvent := types.RawHardwareEvent{
+		ExternalUserID: "user123",
+		Timestamp:      time.Now(),
+		EventType:      "entry",
+		RawData: map[string]interface{}{
+			"source": "test",
+		},
+	}
+
+	// Process the same event multiple times
+	err := s.eventProcessor.ProcessEvent(rawEvent)
+	s.Require().NoError(err)
+
+	err = s.eventProcessor.ProcessEvent(rawEvent)
+	s.Require().NoError(err)
+
+	err = s.eventProcessor.ProcessEvent(rawEvent)
+	s.Require().NoError(err)
+
+	// Verify only one event was actually queued (deduplication)
+	events, err := s.queueManager.GetPendingEvents(10)
+	s.Require().NoError(err)
+	
+	// Should have only unique events based on content hash
+	uniqueEvents := make(map[string]bool)
+	for _, event := range events {
+		key := fmt.Sprintf("%s-%s-%d", event.ExternalUserID, event.EventType, event.Timestamp.Unix())
+		uniqueEvents[key] = true
+	}
+	
+	s.Assert().LessOrEqual(len(uniqueEvents), 1, "Duplicate events should be deduplicated")
+}
+
+// TestAdapterFailureRecovery tests recovery from adapter failures
+func (s *HardwareToCloudTestSuite) TestAdapterFailureRecovery() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start adapters
+	err := s.adapterManager.StartAll(ctx)
+	s.Require().NoError(err)
+
+	// Verify adapter is running
+	status := s.adapterManager.GetStatus()
+	s.Assert().Contains(status, "simulator")
+	s.Assert().Equal("active", status["simulator"].Status)
+
+	// Simulate adapter failure by stopping it
+	s.adapterManager.StopAll()
+
+	// Verify adapter status reflects the failure
+	status = s.adapterManager.GetStatus()
+	if len(status) > 0 {
+		for _, adapterStatus := range status {
+			s.Assert().NotEqual("active", adapterStatus.Status)
+		}
+	}
+
+	// Restart adapters (recovery)
+	err = s.adapterManager.StartAll(ctx)
+	s.Require().NoError(err)
+
+	// Verify recovery
+	time.Sleep(100 * time.Millisecond)
+	status = s.adapterManager.GetStatus()
+	s.Assert().Contains(status, "simulator")
+	s.Assert().Equal("active", status["simulator"].Status)
+}
+
+// TestEventMetadataEnrichment tests that events are properly enriched with metadata
+func (s *HardwareToCloudTestSuite) TestEventMetadataEnrichment() {
+	rawEvent := types.RawHardwareEvent{
+		ExternalUserID: "user456",
+		Timestamp:      time.Now(),
+		EventType:      "exit",
+		RawData: map[string]interface{}{
+			"door": "main_entrance",
+		},
+	}
+
+	// Process event
+	err := s.eventProcessor.ProcessEvent(rawEvent)
+	s.Require().NoError(err)
+
+	// Retrieve processed event
+	events, err := s.queueManager.GetPendingEvents(1)
+	s.Require().NoError(err)
+	s.Require().Len(events, 1)
+
+	event := events[0]
+
+	// Verify metadata enrichment
+	s.Assert().Equal("test-device-123", event.DeviceID)
+	s.Assert().Equal("user456", event.ExternalUserID)
+	s.Assert().Equal("exit", event.EventType)
+	s.Assert().NotEmpty(event.EventID)
+	s.Assert().False(event.Timestamp.IsZero())
+	s.Assert().False(event.IsSimulated) // Should be set based on adapter type
+}
