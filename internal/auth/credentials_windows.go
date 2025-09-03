@@ -5,6 +5,8 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"syscall"
 	"unsafe"
 )
@@ -12,12 +14,28 @@ import (
 // WindowsCredentialManager uses Windows DPAPI for secure credential storage
 type WindowsCredentialManager struct {
 	serviceName string
+	credPath    string
 }
 
 // NewWindowsCredentialManager creates a new Windows credential manager
 func NewWindowsCredentialManager() (*WindowsCredentialManager, error) {
+	// Get user's AppData directory
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		return nil, fmt.Errorf("APPDATA environment variable not set")
+	}
+
+	credPath := filepath.Join(appData, "GymDoorBridge", "credentials.dat")
+
+	// Ensure directory exists
+	dir := filepath.Dir(credPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create credentials directory: %w", err)
+	}
+
 	return &WindowsCredentialManager{
 		serviceName: "GymDoorBridge",
+		credPath:    credPath,
 	}, nil
 }
 
@@ -156,25 +174,46 @@ func (w *WindowsCredentialManager) decryptData(encryptedData []byte) ([]byte, er
 
 // File operations for credential storage
 func (w *WindowsCredentialManager) writeEncryptedFile(data []byte) error {
-	// Implementation would write to a secure location
-	// For now, return success to satisfy interface
+	file, err := os.Create(w.credPath)
+	if err != nil {
+		return fmt.Errorf("failed to create credentials file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = file.Write(data)
+	if err != nil {
+		return fmt.Errorf("failed to write credentials file: %w", err)
+	}
+
 	return nil
 }
 
 func (w *WindowsCredentialManager) readEncryptedFile() ([]byte, error) {
-	// Implementation would read from secure location
-	// For now, return empty data to satisfy interface
-	return []byte{}, fmt.Errorf("no credentials stored")
+	if !w.encryptedFileExists() {
+		return nil, fmt.Errorf("no credentials stored")
+	}
+
+	data, err := os.ReadFile(w.credPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+	}
+
+	return data, nil
 }
 
 func (w *WindowsCredentialManager) deleteEncryptedFile() error {
-	// Implementation would delete from secure location
+	if w.encryptedFileExists() {
+		err := os.Remove(w.credPath)
+		if err != nil {
+			return fmt.Errorf("failed to delete credentials file: %w", err)
+		}
+	}
 	return nil
 }
 
 func (w *WindowsCredentialManager) encryptedFileExists() bool {
-	// Implementation would check if file exists
-	return false
+	_, err := os.Stat(w.credPath)
+	return err == nil
 }
 
 // newPlatformCredentialManager creates a Windows credential manager

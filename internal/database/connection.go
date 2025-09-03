@@ -147,3 +147,18 @@ func (db *DB) Decrypt(ciphertext string) ([]byte, error) {
 
 	return plaintext, nil
 }
+
+// QueryRow executes a query that is expected to return at most one row
+func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
+	return db.conn.QueryRow(query, args...)
+}
+
+// Query executes a query that returns rows
+func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	return db.conn.Query(query, args...)
+}
+
+// Exec executes a query without returning any rows
+func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
+	return db.conn.Exec(query, args...)
+}

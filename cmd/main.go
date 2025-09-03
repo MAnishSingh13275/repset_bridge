@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 
+	"gym-door-bridge/internal/bridge"
 	"gym-door-bridge/internal/config"
 	"gym-door-bridge/internal/logging"
 	"gym-door-bridge/internal/service/windows"
@@ -150,15 +151,25 @@ func bridgeMain(ctx context.Context, cfg *config.Config) error {
 	logger := logging.Initialize(logLevel)
 	
 	logger.WithField("config", cfg).Info("Bridge main function starting")
+	
+	// Create bridge manager with version and device ID
+	manager, err := bridge.NewManager(cfg,
+		bridge.WithVersion("1.0.0"), // TODO: Get from build info
+		bridge.WithDeviceID(cfg.DeviceID),
+	)
+	if err != nil {
+		logger.WithError(err).Error("Failed to create bridge manager")
+		return fmt.Errorf("failed to create bridge manager: %w", err)
+	}
+	
 	logger.Info("Gym Door Access Bridge initialized successfully")
 	
-	// TODO: Initialize and start bridge services
-	// This is where the actual bridge functionality will be implemented
-	// For now, we'll simulate the bridge running
-	
-	select {
-	case <-ctx.Done():
-		logger.Info("Bridge shutting down gracefully")
-		return ctx.Err()
+	// Start the bridge manager
+	if err := manager.Start(ctx); err != nil {
+		logger.WithError(err).Error("Bridge manager stopped with error")
+		return fmt.Errorf("bridge manager error: %w", err)
 	}
+	
+	logger.Info("Bridge shutting down gracefully")
+	return nil
 }

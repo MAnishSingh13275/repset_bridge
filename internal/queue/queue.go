@@ -2,8 +2,10 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"gym-door-bridge/internal/database"
@@ -29,6 +31,45 @@ type QueueStats struct {
 	LastSentAt      time.Time `json:"lastSentAt"`      // Timestamp of last successful send
 	LastFailureAt   time.Time `json:"lastFailureAt"`   // Timestamp of last failure
 	OldestEventTime time.Time `json:"oldestEventTime"` // Timestamp of oldest queued event
+}
+
+// EventQueryFilter represents criteria for querying events
+type EventQueryFilter struct {
+	StartTime    *time.Time `json:"startTime,omitempty"`
+	EndTime      *time.Time `json:"endTime,omitempty"`
+	EventType    string     `json:"eventType,omitempty"`
+	UserID       string     `json:"userId,omitempty"`
+	IsSimulated  *bool      `json:"isSimulated,omitempty"`
+	SentStatus   string     `json:"sentStatus,omitempty"` // "all", "sent", "pending", "failed"
+	Limit        int        `json:"limit"`
+	Offset       int        `json:"offset"`
+	SortBy       string     `json:"sortBy"`     // "timestamp", "event_type", "external_user_id"
+	SortOrder    string     `json:"sortOrder"`  // "asc", "desc"
+}
+
+// EventStatistics represents comprehensive event statistics
+type EventStatistics struct {
+	TotalEvents      int64                    `json:"totalEvents"`
+	EventsByType     map[string]int64         `json:"eventsByType"`
+	EventsByHour     map[string]int64         `json:"eventsByHour"`
+	EventsByDay      map[string]int64         `json:"eventsByDay"`
+	PendingEvents    int64                    `json:"pendingEvents"`
+	SentEvents       int64                    `json:"sentEvents"`
+	FailedEvents     int64                    `json:"failedEvents"`
+	UniqueUsers      int64                    `json:"uniqueUsers"`
+	SimulatedEvents  int64                    `json:"simulatedEvents"`
+	OldestEventTime  *time.Time               `json:"oldestEventTime,omitempty"`
+	NewestEventTime  *time.Time               `json:"newestEventTime,omitempty"`
+	AveragePerHour   float64                  `json:"averagePerHour"`
+	AveragePerDay    float64                  `json:"averagePerDay"`
+}
+
+// EventClearCriteria represents criteria for clearing events
+type EventClearCriteria struct {
+	OlderThan   *time.Time `json:"olderThan,omitempty"`
+	EventType   string     `json:"eventType,omitempty"`
+	OnlySent    bool       `json:"onlySent,omitempty"`
+	OnlyFailed  bool       `json:"onlyFailed,omitempty"`
 }
 
 // QueuedEvent represents an event stored in the queue
@@ -79,6 +120,15 @@ type QueueManager interface {
 
 	// IsQueueFull checks if the queue has reached its maximum capacity
 	IsQueueFull(ctx context.Context) (bool, error)
+
+	// QueryEvents retrieves events based on filter criteria
+	QueryEvents(ctx context.Context, filter EventQueryFilter) ([]QueuedEvent, int64, error)
+
+	// GetEventStats returns comprehensive event statistics
+	GetEventStats(ctx context.Context) (EventStatistics, error)
+
+	// ClearEvents removes events based on criteria
+	ClearEvents(ctx context.Context, criteria EventClearCriteria) (int64, error)
 
 	// Close gracefully shuts down the queue manager
 	Close(ctx context.Context) error
@@ -414,4 +464,339 @@ func GetTierConfig(tier database.PerformanceTier) QueueConfig {
 	default:
 		return GetTierConfig(database.TierNormal)
 	}
+}
+
+// QueryEvents retrieves events based on filter criteria
+func (q *sqliteQueueManager) QueryEvents(ctx context.Context, filter EventQueryFilter) ([]QueuedEvent, int64, error) {
+	// Build the WHERE clause based on filter criteria
+	var conditions []string
+	var args []interface{}
+	
+	if filter.StartTime != nil {
+		conditions = append(conditions, "timestamp >= ?")
+		args = append(args, *filter.StartTime)
+	}
+	
+	if filter.EndTime != nil {
+		conditions = append(conditions, "timestamp <= ?")
+		args = append(args, *filter.EndTime)
+	}
+	
+	if filter.EventType != "" {
+		conditions = append(conditions, "event_type = ?")
+		args = append(args, filter.EventType)
+	}
+	
+	if filter.UserID != "" {
+		conditions = append(conditions, "external_user_id = ?")
+		args = append(args, filter.UserID)
+	}
+	
+	if filter.IsSimulated != nil {
+		conditions = append(conditions, "is_simulated = ?")
+		args = append(args, *filter.IsSimulated)
+	}
+	
+	// Handle sent status filter
+	switch filter.SentStatus {
+	case "sent":
+		conditions = append(conditions, "sent_at IS NOT NULL")
+	case "pending":
+		conditions = append(conditions, "sent_at IS NULL AND retry_count < ?")
+		args = append(args, q.config.MaxRetries)
+	case "failed":
+		conditions = append(conditions, "sent_at IS NULL AND retry_count >= ?")
+		args = append(args, q.config.MaxRetries)
+	// "all" or empty means no additional filter
+	}
+	
+	// Build the complete query
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+	
+	// Get total count
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM event_queue %s", whereClause)
+	var total int64
+	if err := q.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to get event count: %w", err)
+	}
+	
+	// Build ORDER BY clause
+	orderBy := fmt.Sprintf("ORDER BY %s %s", filter.SortBy, strings.ToUpper(filter.SortOrder))
+	
+	// Build main query with pagination
+	query := fmt.Sprintf(`
+		SELECT id, event_id, external_user_id, timestamp, event_type, is_simulated, 
+		       raw_data, created_at, sent_at, retry_count
+		FROM event_queue %s %s
+		LIMIT ? OFFSET ?
+	`, whereClause, orderBy)
+	
+	args = append(args, filter.Limit, filter.Offset)
+	
+	rows, err := q.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query events: %w", err)
+	}
+	defer rows.Close()
+	
+	var events []QueuedEvent
+	for rows.Next() {
+		var dbEvent database.EventQueue
+		var rawData sql.NullString
+		var sentAt sql.NullTime
+		
+		err := rows.Scan(
+			&dbEvent.ID,
+			&dbEvent.EventID,
+			&dbEvent.ExternalUserID,
+			&dbEvent.Timestamp,
+			&dbEvent.EventType,
+			&dbEvent.IsSimulated,
+			&rawData,
+			&dbEvent.CreatedAt,
+			&sentAt,
+			&dbEvent.RetryCount,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to scan event row: %w", err)
+		}
+		
+		if rawData.Valid {
+			dbEvent.RawData = rawData.String
+		}
+		if sentAt.Valid {
+			dbEvent.SentAt = &sentAt.Time
+		}
+		
+		queuedEvent, err := q.dbEventToQueuedEvent(&dbEvent)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to convert db event: %w", err)
+		}
+		
+		events = append(events, queuedEvent)
+	}
+	
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating event rows: %w", err)
+	}
+	
+	return events, total, nil
+}
+
+// GetEventStats returns comprehensive event statistics
+func (q *sqliteQueueManager) GetEventStats(ctx context.Context) (EventStatistics, error) {
+	stats := EventStatistics{
+		EventsByType: make(map[string]int64),
+		EventsByHour: make(map[string]int64),
+		EventsByDay:  make(map[string]int64),
+	}
+	
+	// Get total events count
+	err := q.db.QueryRow("SELECT COUNT(*) FROM event_queue").Scan(&stats.TotalEvents)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get total events count: %w", err)
+	}
+	
+	// Get events by type
+	rows, err := q.db.Query("SELECT event_type, COUNT(*) FROM event_queue GROUP BY event_type")
+	if err != nil {
+		return stats, fmt.Errorf("failed to get events by type: %w", err)
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var eventType string
+		var count int64
+		if err := rows.Scan(&eventType, &count); err != nil {
+			return stats, fmt.Errorf("failed to scan event type row: %w", err)
+		}
+		stats.EventsByType[eventType] = count
+	}
+	
+	// Get sent/pending/failed counts
+	err = q.db.QueryRow("SELECT COUNT(*) FROM event_queue WHERE sent_at IS NOT NULL").Scan(&stats.SentEvents)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get sent events count: %w", err)
+	}
+	
+	err = q.db.QueryRow("SELECT COUNT(*) FROM event_queue WHERE sent_at IS NULL AND retry_count < ?", q.config.MaxRetries).Scan(&stats.PendingEvents)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get pending events count: %w", err)
+	}
+	
+	err = q.db.QueryRow("SELECT COUNT(*) FROM event_queue WHERE sent_at IS NULL AND retry_count >= ?", q.config.MaxRetries).Scan(&stats.FailedEvents)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get failed events count: %w", err)
+	}
+	
+	// Get unique users count
+	err = q.db.QueryRow("SELECT COUNT(DISTINCT external_user_id) FROM event_queue").Scan(&stats.UniqueUsers)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get unique users count: %w", err)
+	}
+	
+	// Get simulated events count
+	err = q.db.QueryRow("SELECT COUNT(*) FROM event_queue WHERE is_simulated = 1").Scan(&stats.SimulatedEvents)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get simulated events count: %w", err)
+	}
+	
+	// Get oldest and newest event times
+	if stats.TotalEvents > 0 {
+		// First try to get timestamps as strings and parse them
+		var oldestTimeStr, newestTimeStr sql.NullString
+		err = q.db.QueryRow("SELECT MIN(timestamp), MAX(timestamp) FROM event_queue").Scan(&oldestTimeStr, &newestTimeStr)
+		if err != nil {
+			return stats, fmt.Errorf("failed to get event time range: %w", err)
+		}
+		
+		if oldestTimeStr.Valid && oldestTimeStr.String != "" {
+			// Try multiple time formats that SQLite might use
+			formats := []string{
+				time.RFC3339,
+				time.RFC3339Nano,
+				"2006-01-02 15:04:05.999999999-07:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05",
+				"2006-01-02T15:04:05.999999999Z07:00",
+				"2006-01-02T15:04:05.999999999Z",
+				"2006-01-02T15:04:05Z",
+			}
+			for _, format := range formats {
+				if parsedTime, err := time.Parse(format, oldestTimeStr.String); err == nil {
+					stats.OldestEventTime = &parsedTime
+					break
+				}
+			}
+		}
+		if newestTimeStr.Valid && newestTimeStr.String != "" {
+			// Try multiple time formats that SQLite might use
+			formats := []string{
+				time.RFC3339,
+				time.RFC3339Nano,
+				"2006-01-02 15:04:05.999999999-07:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05",
+				"2006-01-02T15:04:05.999999999Z07:00",
+				"2006-01-02T15:04:05.999999999Z",
+				"2006-01-02T15:04:05Z",
+			}
+			for _, format := range formats {
+				if parsedTime, err := time.Parse(format, newestTimeStr.String); err == nil {
+					stats.NewestEventTime = &parsedTime
+					break
+				}
+			}
+		}
+	}
+	
+	// Calculate averages if we have time range
+	if stats.OldestEventTime != nil && stats.NewestEventTime != nil && stats.TotalEvents > 0 {
+		duration := stats.NewestEventTime.Sub(*stats.OldestEventTime)
+		if duration > 0 {
+			hours := duration.Hours()
+			days := duration.Hours() / 24
+			
+			if hours > 0 {
+				stats.AveragePerHour = float64(stats.TotalEvents) / hours
+			}
+			if days > 0 {
+				stats.AveragePerDay = float64(stats.TotalEvents) / days
+			}
+		}
+	}
+	
+	// Get events by hour (last 24 hours)
+	hourRows, err := q.db.Query(`
+		SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as hour, COUNT(*)
+		FROM event_queue 
+		WHERE timestamp >= datetime('now', '-24 hours')
+		GROUP BY hour
+		ORDER BY hour
+	`)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get events by hour: %w", err)
+	}
+	defer hourRows.Close()
+	
+	for hourRows.Next() {
+		var hour string
+		var count int64
+		if err := hourRows.Scan(&hour, &count); err != nil {
+			return stats, fmt.Errorf("failed to scan hour row: %w", err)
+		}
+		stats.EventsByHour[hour] = count
+	}
+	
+	// Get events by day (last 30 days)
+	dayRows, err := q.db.Query(`
+		SELECT strftime('%Y-%m-%d', timestamp) as day, COUNT(*)
+		FROM event_queue 
+		WHERE timestamp >= datetime('now', '-30 days')
+		GROUP BY day
+		ORDER BY day
+	`)
+	if err != nil {
+		return stats, fmt.Errorf("failed to get events by day: %w", err)
+	}
+	defer dayRows.Close()
+	
+	for dayRows.Next() {
+		var day string
+		var count int64
+		if err := dayRows.Scan(&day, &count); err != nil {
+			return stats, fmt.Errorf("failed to scan day row: %w", err)
+		}
+		stats.EventsByDay[day] = count
+	}
+	
+	return stats, nil
+}
+
+// ClearEvents removes events based on criteria
+func (q *sqliteQueueManager) ClearEvents(ctx context.Context, criteria EventClearCriteria) (int64, error) {
+	var conditions []string
+	var args []interface{}
+	
+	if criteria.OlderThan != nil {
+		conditions = append(conditions, "timestamp < ?")
+		args = append(args, *criteria.OlderThan)
+	}
+	
+	if criteria.EventType != "" {
+		conditions = append(conditions, "event_type = ?")
+		args = append(args, criteria.EventType)
+	}
+	
+	if criteria.OnlySent {
+		conditions = append(conditions, "sent_at IS NOT NULL")
+	}
+	
+	if criteria.OnlyFailed {
+		conditions = append(conditions, "sent_at IS NULL AND retry_count >= ?")
+		args = append(args, q.config.MaxRetries)
+	}
+	
+	// Build the DELETE query
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+	
+	query := fmt.Sprintf("DELETE FROM event_queue %s", whereClause)
+	
+	result, err := q.db.Exec(query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to clear events: %w", err)
+	}
+	
+	deletedCount, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get deleted count: %w", err)
+	}
+	
+	return deletedCount, nil
 }

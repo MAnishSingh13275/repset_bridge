@@ -99,6 +99,15 @@ func (a *AuthManager) RotateCredentials(newDeviceKey string) error {
 	return nil
 }
 
+// GetCredentials returns the stored device credentials
+func (a *AuthManager) GetCredentials() (deviceID, deviceKey string, err error) {
+	if !a.IsAuthenticated() {
+		return "", "", fmt.Errorf("not authenticated")
+	}
+
+	return a.credManager.GetCredentials()
+}
+
 // ClearCredentials removes stored credentials
 func (a *AuthManager) ClearCredentials() error {
 	if err := a.credManager.DeleteCredentials(); err != nil {
