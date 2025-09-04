@@ -1,0 +1,80 @@
+# Multi-Device Configuration Example
+# Configuration for multiple biometric devices
+
+# Device configuration
+device:
+  id: ""  # Set during pairing process
+  key: "" # Set during pairing process
+
+# API configuration
+api:
+  baseUrl: "https://repset.onezy.in"
+  timeout: "30s"
+
+# Database configuration
+database:
+  path: "data/bridge.db"
+
+# Logging configuration
+logging:
+  level: "info"
+  file: "logs/bridge.log"
+  maxSize: 10
+  maxBackups: 10
+  maxAge: 30
+  compress: true
+
+# Multiple device adapters
+enabled_adapters:
+  - main_entrance
+  - back_entrance
+  - staff_entrance
+
+adapter_configs:
+  # ZKTeco device at main entrance
+  main_entrance:
+    device_type: zkteco
+    connection: tcp
+    device_config:
+      ip: "192.168.1.100"
+      port: "4370"
+      comm_password: "0"
+    sync_interval: 30
+
+  # ESSL device at back entrance
+  back_entrance:
+    device_type: essl
+    connection: tcp
+    device_config:
+      ip: "192.168.1.101"
+      port: "80"
+      username: "admin"
+      password: "admin"
+    sync_interval: 30
+
+  # Realtime device for staff
+  staff_entrance:
+    device_type: realtime
+    connection: tcp
+    device_config:
+      ip: "192.168.1.102"
+      port: "5005"
+      device_id: 1
+    sync_interval: 60
+
+# Queue configuration for multiple devices
+queue:
+  enabled: true
+  maxSize: 50000
+  batchSize: 200
+  retryInterval: "30s"
+  maxConcurrency: 5
+
+# Health monitoring
+health:
+  enabled: true
+  checkInterval: "30s"
+
+# Performance tier (auto-detected based on system resources)
+performance:
+  tier: "auto"  # auto, lite, normal, full

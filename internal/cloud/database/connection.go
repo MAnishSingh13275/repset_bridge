@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gym-door-bridge/internal/cloud/config"
+	"gym-door-bridge/internal/cloud/config"
 	_ "github.com/lib/pq"
 )
 

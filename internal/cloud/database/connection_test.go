@@ -3,7 +3,7 @@ package database
 import (
 	"testing"
 
-	"github.com/gym-door-bridge/internal/cloud/config"
+	"gym-door-bridge/internal/cloud/config"
 )
 
 func TestNewConnection(t *testing.T) {

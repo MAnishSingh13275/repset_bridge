@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 
 	"gym-door-bridge/internal/bridge"
 	"gym-door-bridge/internal/config"
+	"gym-door-bridge/internal/installer"
 	"gym-door-bridge/internal/logging"
 	"gym-door-bridge/internal/service/windows"
 	"gym-door-bridge/internal/service/macos"
@@ -56,6 +59,7 @@ func init() {
 	// Add platform-specific service commands
 	if runtime.GOOS == "windows" {
 		windows.AddServiceCommands(rootCmd)
+		addWindowsInstallerCommands()
 	} else if runtime.GOOS == "darwin" {
 		macos.AddServiceCommands(rootCmd)
 	}
@@ -139,10 +143,33 @@ func runAsConsole() {
 		}
 	} else {
 		// Run directly on other platforms or when not running as daemon
-		ctx := context.Background()
-		if err := bridgeMain(ctx, cfg); err != nil {
-			logger.WithError(err).Fatal("Bridge execution failed")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		
+		// Handle interrupt signals for graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		
+		// Start bridge in goroutine
+		errChan := make(chan error, 1)
+		go func() {
+			if err := bridgeMain(ctx, cfg); err != nil {
+				errChan <- err
+			}
+		}()
+		
+		// Wait for signal or error
+		select {
+		case sig := <-sigChan:
+			logger.WithField("signal", sig).Info("Received shutdown signal")
+			cancel()
+		case err := <-errChan:
+			if err != nil {
+				logger.WithError(err).Fatal("Bridge execution failed")
+			}
 		}
+		
+		logger.Info("Application shutdown complete")
 	}
 }
 
@@ -172,4 +199,63 @@ func bridgeMain(ctx context.Context, cfg *config.Config) error {
 	
 	logger.Info("Bridge shutting down gracefully")
 	return nil
+}
+// add
+WindowsInstallerCommands adds Windows installer commands
+func addWindowsInstallerCommands() {
+	var installCmd = &cobra.Command{
+		Use:   "install",
+		Short: "Install Gym Door Bridge as Windows service with auto-discovery",
+		Long: `Install the Gym Door Bridge as a Windows service. This command will:
+- Automatically discover biometric devices on the network
+- Generate configuration based on discovered devices
+- Install the service to run automatically at startup
+- Configure logging and database paths
+
+Requires administrator privileges.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			installer, err := installer.NewWindowsInstaller()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := installer.Install(); err != nil {
+				fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("Installation completed successfully!")
+			fmt.Println("The Gym Door Bridge service has been installed and started.")
+			fmt.Println("Use 'gym-door-bridge pair' to connect to your platform.")
+		},
+	}
+
+	var uninstallCmd = &cobra.Command{
+		Use:   "uninstall",
+		Short: "Uninstall Gym Door Bridge Windows service",
+		Long: `Uninstall the Gym Door Bridge Windows service. This command will:
+- Stop the running service
+- Remove the service from Windows
+- Clean up installation files and registry entries
+
+Requires administrator privileges.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			installer, err := installer.NewWindowsInstaller()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := installer.Uninstall(); err != nil {
+				fmt.Fprintf(os.Stderr, "Uninstallation failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("Uninstallation completed successfully!")
+		},
+	}
+
+	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(uninstallCmd)
 }

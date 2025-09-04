@@ -6,7 +6,7 @@ device_id: ""
 device_key: ""
 
 # Server configuration
-server_url: "https://api.yourdomain.com"
+server_url: "https://repset.onezy.in"
 
 # Performance tier (auto-detected, can be overridden)
 # Options: lite, normal, full

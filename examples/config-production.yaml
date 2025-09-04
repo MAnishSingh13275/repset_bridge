@@ -1,0 +1,155 @@
+# Production Configuration Example
+# Configuration for production deployment with Repset SaaS platform
+
+# Device configuration (set during pairing process)
+device:
+  id: "" # Set during pairing process
+  key: "" # Set during pairing process
+
+# API configuration for Repset platform
+api:
+  baseUrl: "https://repset.onezy.in"
+  timeout: "30s"
+  retryAttempts: 3
+  retryDelay: "5s"
+
+# Database configuration
+database:
+  path: "data/bridge.db"
+  maxConnections: 10
+  connectionTimeout: "30s"
+  backupEnabled: true
+  backupInterval: "24h"
+  backupRetention: "30d"
+
+# Logging configuration for production
+logging:
+  level: "info"
+  file: "logs/bridge.log"
+  maxSize: 100 # MB
+  maxBackups: 30
+  maxAge: 90 # days
+  compress: true
+  format: "json" # json or text
+
+# Production device adapters
+enabled_adapters:
+  - main_entrance
+  - back_entrance
+  - staff_entrance
+
+adapter_configs:
+  # Main entrance - ZKTeco device
+  main_entrance:
+    device_type: zkteco
+    connection: tcp
+    device_config:
+      ip: "192.168.1.100"
+      port: "4370"
+      comm_password: "0"
+      timeout: "10s"
+    sync_interval: 30
+    retry_attempts: 3
+    health_check_interval: "5m"
+
+  # Back entrance - ESSL device
+  back_entrance:
+    device_type: essl
+    connection: tcp
+    device_config:
+      ip: "192.168.1.101"
+      port: "80"
+      username: "admin"
+      password: "admin"
+      timeout: "10s"
+    sync_interval: 30
+    retry_attempts: 3
+    health_check_interval: "5m"
+
+  # Staff entrance - Realtime device
+  staff_entrance:
+    device_type: realtime
+    connection: tcp
+    device_config:
+      ip: "192.168.1.102"
+      port: "5005"
+      device_id: 1
+      timeout: "10s"
+    sync_interval: 60
+    retry_attempts: 3
+    health_check_interval: "5m"
+
+# Production queue configuration
+queue:
+  enabled: true
+  maxSize: 50000
+  batchSize: 200
+  retryInterval: "30s"
+  maxConcurrency: 5
+  persistToDisk: true
+  compressionEnabled: true
+
+# Health monitoring for production
+health:
+  enabled: true
+  checkInterval: "30s"
+  endpoint: "/health"
+  port: 8080
+  timeout: "10s"
+
+# Performance configuration
+performance:
+  tier: "auto" # auto-detect based on system resources
+  maxMemoryUsage: "500MB"
+  maxCPUUsage: 80 # percentage
+  gcInterval: "5m"
+
+# Security configuration
+security:
+  hmacEnabled: true
+  keyRotationInterval: "24h"
+  maxClockSkew: "5m"
+  rateLimitEnabled: true
+  rateLimitRequests: 1000 # per hour
+
+# Network configuration
+network:
+  connectTimeout: "30s"
+  readTimeout: "30s"
+  writeTimeout: "30s"
+  keepAlive: true
+  maxIdleConns: 100
+  maxIdleConnsPerHost: 10
+
+  # Proxy configuration (if needed)
+  proxy:
+    enabled: false
+    http: ""
+    https: ""
+    noProxy: ["localhost", "127.0.0.1"]
+
+# Monitoring and alerting
+monitoring:
+  enabled: true
+  metricsEnabled: true
+  metricsPort: 9090
+
+  alerts:
+    enabled: true
+    email: "admin@repset.onezy.in"
+    webhook: ""
+
+  thresholds:
+    queueDepth: 10000
+    memoryUsage: 80 # percentage
+    diskUsage: 90 # percentage
+    errorRate: 5 # percentage
+    responseTime: 5000 # milliseconds
+
+# Update configuration
+updater:
+  enabled: true
+  checkInterval: "1h"
+  autoUpdate: false # Manual approval for production
+  channel: "stable"
+  backupBeforeUpdate: true

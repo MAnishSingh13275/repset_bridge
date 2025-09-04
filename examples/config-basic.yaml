@@ -1,0 +1,47 @@
+# Basic Configuration Example
+# Minimal configuration for single ZKTeco device
+
+# Device configuration
+device:
+  id: ""  # Set during pairing process
+  key: "" # Set during pairing process
+
+# API configuration
+api:
+  baseUrl: "https://repset.onezy.in"
+  timeout: "30s"
+
+# Database configuration
+database:
+  path: "data/bridge.db"
+
+# Logging configuration
+logging:
+  level: "info"
+  file: "logs/bridge.log"
+
+# Single device adapter
+enabled_adapters:
+  - main_entrance
+
+adapter_configs:
+  main_entrance:
+    device_type: zkteco
+    connection: tcp
+    device_config:
+      ip: "192.168.1.100"
+      port: "4370"
+      comm_password: "0"
+    sync_interval: 30
+
+# Basic queue configuration
+queue:
+  enabled: true
+  maxSize: 10000
+  batchSize: 100
+  retryInterval: "30s"
+
+# Health monitoring
+health:
+  enabled: true
+  checkInterval: "60s"

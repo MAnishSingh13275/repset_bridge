@@ -62,7 +62,7 @@ heartbeat_interval: 60
 log_file: ""
 log_level: info
 queue_max_size: 10000
-server_url: https://repset.onezy.in
+server_url: http://localhost:3000
 tier: normal
 unlock_duration: 3000
 update_manifest_url: ""

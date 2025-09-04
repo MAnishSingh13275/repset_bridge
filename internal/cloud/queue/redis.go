@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/gym-door-bridge/internal/cloud/config"
+	"gym-door-bridge/internal/cloud/config"
 )
 
 // RedisQueue implements message queue using Redis

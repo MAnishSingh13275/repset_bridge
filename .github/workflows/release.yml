@@ -1,0 +1,105 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Get version
+      id: version
+      run: |
+        if ("${{ github.event_name }}" -eq "push") {
+          $version = "${{ github.ref_name }}"
+        } else {
+          $version = "${{ github.event.inputs.version }}"
+        }
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+        echo "Building version: $version"
+      shell: powershell
+      
+    - name: Build executable
+      run: |
+        go mod tidy
+        go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o gym-door-bridge.exe ./cmd
+      shell: cmd
+      
+    - name: Create release package
+      run: |
+        mkdir release
+        copy gym-door-bridge.exe release\
+        copy install.bat release\
+        copy install.ps1 release\
+        copy web-install.ps1 release\
+        copy README.md release\
+        copy INSTALLATION.md release\
+        copy DOWNLOAD.md release\
+        copy GYM_OWNER_GUIDE.md release\
+        copy config.yaml.example release\
+        
+        cd release
+        powershell -Command "Compress-Archive -Path * -DestinationPath ..\gym-door-bridge-${{ steps.version.outputs.VERSION }}-windows.zip"
+      shell: cmd
+      
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.VERSION }}
+        name: Gym Door Bridge ${{ steps.version.outputs.VERSION }}
+        body: |
+          ## 🚀 Gym Door Bridge ${{ steps.version.outputs.VERSION }}
+          
+          ### For Gym Owners (Easy Installation)
+          
+          **One-Click Install:**
+          ```powershell
+          # Run PowerShell as Administrator:
+          iex (iwr -useb https://raw.githubusercontent.com/${{ github.repository }}/main/web-install.ps1).Content
+          ```
+          
+          **Manual Install:**
+          1. Download `gym-door-bridge-${{ steps.version.outputs.VERSION }}-windows.zip`
+          2. Extract and run `install.bat` as Administrator
+          3. Done! Service will auto-discover your biometric devices
+          
+          ### Features
+          - ✅ Automatic biometric device discovery
+          - ✅ Windows service installation
+          - ✅ Support for ZKTeco, ESSL, Realtime devices
+          - ✅ Real-time member check-in sync
+          - ✅ Zero-configuration setup
+          
+          ### System Requirements
+          - Windows 10/11 or Windows Server 2016+
+          - Administrator privileges for installation
+          - Network access to biometric devices
+          
+          See [Installation Guide](https://github.com/${{ github.repository }}/blob/main/INSTALLATION.md) for detailed instructions.
+        files: |
+          gym-door-bridge-${{ steps.version.outputs.VERSION }}-windows.zip
+          gym-door-bridge.exe
+          install.bat
+          install.ps1
+          web-install.ps1
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gym-door-bridge/internal/cloud/config"
+	"gym-door-bridge/internal/cloud/config"
 )
 
 func TestNewRedisQueue(t *testing.T) {
