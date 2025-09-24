@@ -210,7 +210,7 @@ try {
         Write-Info "Please wait while scanning network (this may take 1-2 minutes)..."
         Write-Host ""
         
-        $installOutput = & ".\gym-door-bridge.exe" install 2>&1
+        $installOutput = & ".\gym-door-bridge.exe" service install 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "Service installation failed: $installOutput"
         }

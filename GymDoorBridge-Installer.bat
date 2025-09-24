@@ -111,7 +111,7 @@ echo      This will automatically discover your biometric devices...
 echo      Please wait while scanning network (this may take 1-2 minutes)...
 echo.
 
-gym-door-bridge.exe install
+gym-door-bridge.exe service install
 
 if %errorLevel% neq 0 (
     color 0C
