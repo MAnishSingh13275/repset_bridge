@@ -19,22 +19,22 @@ if (-not $Silent) {
 }
 
 # Color functions
-function Write-Success { param([string]$Message) Write-Host "      ✓ $Message" -ForegroundColor Green }
-function Write-Error { param([string]$Message) Write-Host "      ✗ $Message" -ForegroundColor Red }
-function Write-Warning { param([string]$Message) Write-Host "      ! $Message" -ForegroundColor Yellow }
-function Write-Info { param([string]$Message) Write-Host "      → $Message" -ForegroundColor Cyan }
+function Write-Success { param([string]$Message) Write-Host "      [OK] $Message" -ForegroundColor Green }
+function Write-Error { param([string]$Message) Write-Host "      [ERROR] $Message" -ForegroundColor Red }
+function Write-Warning { param([string]$Message) Write-Host "      [WARNING] $Message" -ForegroundColor Yellow }
+function Write-Info { param([string]$Message) Write-Host "      [INFO] $Message" -ForegroundColor Cyan }
 function Write-Step { param([string]$Step, [string]$Message) Write-Host "[$Step] $Message" -ForegroundColor White }
 
 # Banner
 if (-not $Silent) {
     Write-Host ""
-    Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
-    Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █              GYM DOOR BRIDGE WEB INSTALLER                  █" -ForegroundColor Green
-    Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █          Downloads and installs automatically               █" -ForegroundColor Green
-    Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
+    Write-Host "  ================================================================" -ForegroundColor Green
+    Write-Host "  |                                                              |" -ForegroundColor Green
+    Write-Host "  |              GYM DOOR BRIDGE WEB INSTALLER                  |" -ForegroundColor Green
+    Write-Host "  |                                                              |" -ForegroundColor Green
+    Write-Host "  |          Downloads and installs automatically               |" -ForegroundColor Green
+    Write-Host "  |                                                              |" -ForegroundColor Green
+    Write-Host "  ================================================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Version: $Version" -ForegroundColor Gray
     Write-Host "  Source: GitHub Release" -ForegroundColor Gray
@@ -49,14 +49,14 @@ try {
     
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host ""
-        Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
-        Write-Host "  █                        ERROR                                 █" -ForegroundColor Red
-        Write-Host "  █                                                              █" -ForegroundColor Red
-        Write-Host "  █    This installer requires administrator privileges!         █" -ForegroundColor Red
-        Write-Host "  █                                                              █" -ForegroundColor Red
-        Write-Host "  █    Please run PowerShell as administrator and try again     █" -ForegroundColor Red
-        Write-Host "  █                                                              █" -ForegroundColor Red
-        Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
+        Write-Host "  ================================================================" -ForegroundColor Red
+        Write-Host "  |                        ERROR                                 |" -ForegroundColor Red
+        Write-Host "  |                                                              |" -ForegroundColor Red
+        Write-Host "  |    This installer requires administrator privileges!         |" -ForegroundColor Red
+        Write-Host "  |                                                              |" -ForegroundColor Red
+        Write-Host "  |    Please run PowerShell as administrator and try again     |" -ForegroundColor Red
+        Write-Host "  |                                                              |" -ForegroundColor Red
+        Write-Host "  ================================================================" -ForegroundColor Red
         Write-Host ""
         if (-not $Silent) { Read-Host "Press Enter to exit" }
         exit 1
@@ -211,22 +211,22 @@ try {
     }
 
     # Installation complete
-    Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
-    Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █              INSTALLATION SUCCESSFUL!                       █" -ForegroundColor Green
-    Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
+    Write-Host "  ================================================================" -ForegroundColor Green
+    Write-Host "  |                                                              |" -ForegroundColor Green
+    Write-Host "  |              INSTALLATION SUCCESSFUL!                       |" -ForegroundColor Green
+    Write-Host "  |                                                              |" -ForegroundColor Green
+    Write-Host "  ================================================================" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  ✓ Downloaded latest version (v$Version)" -ForegroundColor Green
-    Write-Host "  ✓ Gym Door Bridge service installed and running" -ForegroundColor Green
-    Write-Host "  ✓ Auto-discovery completed for biometric devices" -ForegroundColor Green
-    Write-Host "  ✓ Service configured to start automatically on boot" -ForegroundColor Green
+    Write-Host "  [OK] Downloaded latest version (v$Version)" -ForegroundColor Green
+    Write-Host "  [OK] Gym Door Bridge service installed and running" -ForegroundColor Green
+    Write-Host "  [OK] Auto-discovery completed for biometric devices" -ForegroundColor Green
+    Write-Host "  [OK] Service configured to start automatically on boot" -ForegroundColor Green
     Write-Host ""
 
     if (-not $Silent) {
-        Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Cyan
-        Write-Host "  █                      NEXT STEPS                             █" -ForegroundColor Cyan
-        Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Cyan
+        Write-Host "  ================================================================" -ForegroundColor Cyan
+        Write-Host "  |                      NEXT STEPS                             |" -ForegroundColor Cyan
+        Write-Host "  ================================================================" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  1. PAIR YOUR DEVICE:" -ForegroundColor White
         Write-Host "     • Get pairing code from your admin portal" -ForegroundColor Gray
@@ -303,12 +303,12 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
-    Write-Host "  █                        ERROR                                 █" -ForegroundColor Red
-    Write-Host "  █                                                              █" -ForegroundColor Red
-    Write-Host "  █                Web Installation Failed!                     █" -ForegroundColor Red
-    Write-Host "  █                                                              █" -ForegroundColor Red
-    Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host "  |                        ERROR                                 |" -ForegroundColor Red
+    Write-Host "  |                                                              |" -ForegroundColor Red
+    Write-Host "  |                Web Installation Failed!                     |" -ForegroundColor Red
+    Write-Host "  |                                                              |" -ForegroundColor Red
+    Write-Host "  ================================================================" -ForegroundColor Red
     Write-Host ""
     Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host ""
