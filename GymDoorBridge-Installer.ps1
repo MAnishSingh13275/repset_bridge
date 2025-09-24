@@ -1,19 +1,16 @@
 # ================================================================
-# Gym Door Bridge - Web Installer (One-Click from Website)
-# Downloads, extracts, and installs automatically from the web
+# Gym Door Bridge - One-Click PowerShell Installer  
+# Automatically installs and configures the Gym Door Bridge service
 # ================================================================
 
 param(
-    [string]$Version = "latest",
-    [string]$ReleaseUrl = "https://github.com/YOUR-ORG/gym-door-bridge/releases/latest/download/GymDoorBridge-v1.0.0.zip",
     [string]$PairCode = "",
-    [switch]$Silent = $false
+    [switch]$Silent = $false,
+    [switch]$NoStart = $false
 )
 
-$ErrorActionPreference = "Stop"
-
 # Set up console
-$Host.UI.RawUI.WindowTitle = "Gym Door Bridge Web Installer"
+$Host.UI.RawUI.WindowTitle = "Gym Door Bridge Installer"
 if (-not $Silent) {
     Clear-Host
 }
@@ -29,15 +26,16 @@ function Write-Step { param([string]$Step, [string]$Message) Write-Host "[$Step]
 if (-not $Silent) {
     Write-Host ""
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
+    Write-Host "  █                                                              █" -ForegroundColor Green  
+    Write-Host "  █              GYM DOOR BRIDGE INSTALLER                      █" -ForegroundColor Green
     Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █              GYM DOOR BRIDGE WEB INSTALLER                  █" -ForegroundColor Green
-    Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █          Downloads and installs automatically               █" -ForegroundColor Green
+    Write-Host "  █        Connects your biometric devices to the cloud         █" -ForegroundColor Green
     Write-Host "  █                                                              █" -ForegroundColor Green
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Version: $Version" -ForegroundColor Gray
-    Write-Host "  Source: GitHub Release" -ForegroundColor Gray
+    Write-Host "  Version: 1.0.0" -ForegroundColor Gray
+    Write-Host "  Platform: Windows Service" -ForegroundColor Gray  
+    Write-Host "  Auto-Discovery: Enabled" -ForegroundColor Gray
     Write-Host ""
 }
 
@@ -53,7 +51,7 @@ try {
         Write-Host "  █                        ERROR                                 █" -ForegroundColor Red
         Write-Host "  █                                                              █" -ForegroundColor Red
         Write-Host "  █    This installer requires administrator privileges!         █" -ForegroundColor Red
-        Write-Host "  █                                                              █" -ForegroundColor Red
+        Write-Host "  █                                                              █" -ForegroundColor Red  
         Write-Host "  █    Please run PowerShell as administrator and try again     █" -ForegroundColor Red
         Write-Host "  █                                                              █" -ForegroundColor Red
         Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
@@ -64,127 +62,82 @@ try {
     Write-Success "Administrator privileges confirmed"
     Write-Host ""
 
-    # Create temp directory
-    Write-Step "2/8" "Setting up temporary workspace..."
-    $tempDir = "$env:TEMP\GymDoorBridge-Install-$(Get-Random)"
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-    Write-Success "Temporary directory: $tempDir"
+    # Check build requirements  
+    Write-Step "2/8" "Checking build requirements..."
+    $goPath = Get-Command go -ErrorAction SilentlyContinue
+    if ($goPath) {
+        Write-Success "Go found - can build from source"
+        $canBuild = $true
+    } else {
+        Write-Warning "Go not found - using pre-built executable"  
+        $canBuild = $false
+    }
     Write-Host ""
 
-    # Download release
-    Write-Step "3/8" "Downloading latest release..."
-    Write-Info "Downloading from GitHub..."
-    
-    # If version is "latest", resolve the actual download URL
-    if ($Version -eq "latest") {
-        try {
-            Write-Info "Resolving latest release URL..."
-            $apiUrl = "https://api.github.com/repos/YOUR-ORG/gym-door-bridge/releases/latest"
-            $releaseInfo = Invoke-RestMethod -Uri $apiUrl -UserAgent "GymDoorBridge-WebInstaller"
-            
-            # Find the ZIP asset
-            $zipAsset = $releaseInfo.assets | Where-Object { $_.name -match "GymDoorBridge-v.*\.zip" } | Select-Object -First 1
-            if (-not $zipAsset) {
-                throw "No ZIP asset found in latest release"
-            }
-            
-            $ReleaseUrl = $zipAsset.browser_download_url
-            $Version = $releaseInfo.tag_name -replace "^v", ""
-            Write-Success "Latest version: v$Version"
-        }
-        catch {
-            Write-Warning "Failed to resolve latest version, using provided URL"
-        }
-    }
-
-    $zipPath = "$tempDir\GymDoorBridge.zip"
-    Write-Info "Downloading: $ReleaseUrl"
-    
-    # Download with progress
-    $progressPreference = 'SilentlyContinue'
-    try {
-        Invoke-WebRequest -Uri $ReleaseUrl -OutFile $zipPath -UseBasicParsing
-        $progressPreference = 'Continue'
-    }
-    catch {
-        $progressPreference = 'Continue'
-        throw "Failed to download release: $($_.Exception.Message)"
-    }
-
-    if (-not (Test-Path $zipPath)) {
-        throw "Downloaded file not found: $zipPath"
-    }
-
-    $zipInfo = Get-Item $zipPath
-    $sizeMB = [math]::Round($zipInfo.Length / 1MB, 2)
-    Write-Success "Download completed ($sizeMB MB)"
-    Write-Host ""
-
-    # Extract ZIP
-    Write-Step "4/8" "Extracting installer..."
-    $extractDir = "$tempDir\extracted"
-    
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
-    }
-    catch {
-        throw "Failed to extract ZIP file: $($_.Exception.Message)"
-    }
-
-    # Find the installer files
-    $installerBat = Get-ChildItem -Path $extractDir -Name "GymDoorBridge-Installer.bat" -Recurse | Select-Object -First 1
-    $installerPs1 = Get-ChildItem -Path $extractDir -Name "GymDoorBridge-Installer.ps1" -Recurse | Select-Object -First 1
-    $executable = Get-ChildItem -Path $extractDir -Name "gym-door-bridge.exe" -Recurse | Select-Object -First 1
-
-    if (-not $executable) {
-        throw "gym-door-bridge.exe not found in downloaded package"
-    }
-
-    Write-Success "Extraction completed"
-    Write-Host ""
-
-    # Change to extracted directory for installation
-    $installDir = Split-Path $executable.FullName -Parent
-    Push-Location $installDir
-
-    try {
-        # Check existing installation
-        Write-Step "5/8" "Checking existing installation..."
-        $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
-        if ($service) {
-            Write-Warning "Service already installed"
-            if (-not $Silent) {
-                $reinstall = Read-Host "      Do you want to reinstall? (Y/n)"
-                if ($reinstall.ToLower() -eq "n") {
-                    Write-Host "      Installation cancelled by user."
-                    exit 0
-                }
-            }
-            Write-Info "Removing existing service..."
-            & ".\gym-door-bridge.exe" service uninstall | Out-Null
-            Start-Sleep -Seconds 2
-            Write-Success "Existing service removed"
-        } else {
-            Write-Success "No existing installation found"
-        }
-        Write-Host ""
-
-        # Install service
-        Write-Step "6/8" "Installing Windows service..."
-        Write-Info "This will automatically discover your biometric devices..."
-        Write-Info "Please wait while scanning network (this may take 1-2 minutes)..."
-        Write-Host ""
-        
-        $installOutput = & ".\gym-door-bridge.exe" install 2>&1
+    # Check/build executable
+    Write-Step "3/8" "Preparing executable..."
+    if (Test-Path "gym-door-bridge.exe") {
+        Write-Success "Found existing gym-door-bridge.exe"
+    } elseif ($canBuild) {
+        Write-Info "Building gym-door-bridge.exe from source..."
+        $buildResult = & go build -ldflags "-s -w" -o gym-door-bridge.exe ./cmd 2>&1
         if ($LASTEXITCODE -ne 0) {
-            throw "Service installation failed: $installOutput"
+            Write-Error "Build failed!"
+            Write-Host "Build output: $buildResult" -ForegroundColor Red
+            throw "Build process failed"
         }
-        Write-Success "Service installed successfully!"
+        Write-Success "Build completed successfully"
+    } else {
+        Write-Error "gym-door-bridge.exe not found and Go not available"
         Write-Host ""
+        Write-Host "Please ensure you have either:" -ForegroundColor Yellow
+        Write-Host "1. The pre-built gym-door-bridge.exe file, or" -ForegroundColor Yellow
+        Write-Host "2. Go installed to build from source" -ForegroundColor Yellow
+        throw "Required executable not available"
+    }
+    Write-Host ""
 
-        # Start service
-        Write-Step "7/8" "Starting service..."
+    # Check existing installation
+    Write-Step "4/8" "Checking existing installation..."
+    $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+    if ($service) {
+        Write-Warning "Service already installed"
+        if (-not $Silent) {
+            $reinstall = Read-Host "      Do you want to reinstall? (Y/n)"
+            if ($reinstall.ToLower() -eq "n") {
+                Write-Host "      Installation cancelled by user."
+                exit 0
+            }
+        }
+        Write-Info "Removing existing service..."
+        & ".\gym-door-bridge.exe" service uninstall | Out-Null
+        Start-Sleep -Seconds 2
+        Write-Success "Existing service removed"
+    } else {
+        Write-Success "No existing installation found"
+    }
+    Write-Host ""
+
+    # Install service
+    Write-Step "5/8" "Installing Windows service..."
+    Write-Info "This will automatically discover your biometric devices..."
+    Write-Info "Please wait while scanning network (this may take 1-2 minutes)..."
+    Write-Host ""
+    
+    $installOutput = & ".\gym-door-bridge.exe" install 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Service installation failed!"
+        Write-Host "Installation output:" -ForegroundColor Red
+        Write-Host $installOutput -ForegroundColor Red
+        throw "Service installation failed"
+    }
+    Write-Host ""
+    Write-Success "Service installed successfully!"
+    Write-Host ""
+
+    # Start service
+    if (-not $NoStart) {
+        Write-Step "6/8" "Starting service..."
         $startResult = & ".\gym-door-bridge.exe" service start 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Success "Service started successfully"
@@ -195,7 +148,7 @@ try {
         Write-Host ""
 
         # Verify installation
-        Write-Step "8/8" "Verifying installation..."
+        Write-Step "7/8" "Verifying installation..."
         Start-Sleep -Seconds 3
         $statusResult = & ".\gym-door-bridge.exe" service status 2>&1
         if ($LASTEXITCODE -eq 0) {
@@ -203,24 +156,60 @@ try {
         } else {
             Write-Warning "Service status check inconclusive"
         }
-        Write-Host ""
+    } else {
+        Write-Step "6/8" "Skipping service start (--NoStart specified)"
+        Write-Step "7/8" "Skipping verification (--NoStart specified)"  
+    }
+    Write-Host ""
 
+    # Create shortcuts
+    Write-Step "8/8" "Creating shortcuts..."
+    
+    # Create start menu folder
+    $startMenuPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Gym Door Bridge"
+    if (-not (Test-Path $startMenuPath)) {
+        New-Item -ItemType Directory -Path $startMenuPath -Force | Out-Null
     }
-    finally {
-        Pop-Location
+
+    # Create management shortcuts
+    $shortcuts = @(
+        @{
+            Name = "Check Status"
+            Content = "@echo off`ngym-door-bridge.exe service status`npause"
+        },
+        @{
+            Name = "Pair Device"  
+            Content = "@echo off`nset /p CODE=`"Enter your pairing code: `"`ngym-door-bridge.exe pair --pair-code %CODE%`npause"
+        },
+        @{
+            Name = "Restart Service"
+            Content = "@echo off`ngym-door-bridge.exe service restart`npause"
+        },
+        @{
+            Name = "Uninstall"
+            Content = "@echo off`nset /p CONFIRM=`"Are you sure you want to uninstall? (y/N): `"`nif /i `"%CONFIRM%`"==`"y`" gym-door-bridge.exe service uninstall`npause"
+        }
+    )
+
+    foreach ($shortcut in $shortcuts) {
+        $filePath = "$startMenuPath\$($shortcut.Name).bat"
+        $shortcut.Content | Out-File -FilePath $filePath -Encoding ASCII -Force
     }
+
+    Write-Success "Start menu shortcuts created"
+    Write-Host ""
 
     # Installation complete
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
     Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █              INSTALLATION SUCCESSFUL!                       █" -ForegroundColor Green
+    Write-Host "  █                 INSTALLATION SUCCESSFUL!                    █" -ForegroundColor Green  
     Write-Host "  █                                                              █" -ForegroundColor Green
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  ✓ Downloaded latest version (v$Version)" -ForegroundColor Green
     Write-Host "  ✓ Gym Door Bridge service installed and running" -ForegroundColor Green
     Write-Host "  ✓ Auto-discovery completed for biometric devices" -ForegroundColor Green
-    Write-Host "  ✓ Service configured to start automatically on boot" -ForegroundColor Green
+    Write-Host "  ✓ Service configured to start automatically on boot" -ForegroundColor Green  
+    Write-Host "  ✓ Management shortcuts created in Start Menu" -ForegroundColor Green
     Write-Host ""
 
     if (-not $Silent) {
@@ -233,7 +222,7 @@ try {
         Write-Host "     • Use Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Gray
         Write-Host "     • Or run: gym-door-bridge pair --pair-code YOUR_CODE" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  2. VERIFY SETUP:" -ForegroundColor White
+        Write-Host "  2. VERIFY SETUP:" -ForegroundColor White  
         Write-Host "     • Use Start Menu > Gym Door Bridge > Check Status" -ForegroundColor Gray
         Write-Host "     • Check Windows Services (services.msc)" -ForegroundColor Gray
         Write-Host "     • View Windows Event Viewer for logs" -ForegroundColor Gray
@@ -248,21 +237,15 @@ try {
     # Handle pairing
     if ($PairCode) {
         Write-Host "Pairing device with provided code..." -ForegroundColor Yellow
-        Push-Location $installDir
-        try {
-            $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $PairCode 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host ""
-                Write-Success "Device paired successfully!"
-                Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
-            } else {
-                Write-Host ""
-                Write-Error "Pairing failed. You can try again later."
-                Write-Host "Pairing output: $pairResult" -ForegroundColor Red
-            }
-        }
-        finally {
-            Pop-Location
+        $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $PairCode 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host ""
+            Write-Success "Device paired successfully!"
+            Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
+        } else {
+            Write-Host ""
+            Write-Error "Pairing failed. You can try again later."
+            Write-Host "Pairing output: $pairResult" -ForegroundColor Red
         }
     } elseif (-not $Silent) {
         Write-Host ""
@@ -272,65 +255,47 @@ try {
             if ($inputCode.Trim()) {
                 Write-Host ""
                 Write-Host "Pairing device..." -ForegroundColor Yellow
-                Push-Location $installDir
-                try {
-                    $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $inputCode 2>&1
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Host ""
-                        Write-Success "Device paired successfully!"
-                        Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
-                    } else {
-                        Write-Host ""
-                        Write-Error "Pairing failed. You can try again later using:"
-                        Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
-                    }
-                }
-                finally {
-                    Pop-Location
+                $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $inputCode 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host ""
+                    Write-Success "Device paired successfully!"
+                    Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
+                } else {
+                    Write-Host ""
+                    Write-Error "Pairing failed. You can try again later using:"
+                    Write-Host "gym-door-bridge.exe pair --pair-code YOUR_CODE" -ForegroundColor Cyan
                 }
             }
         }
     }
 
     Write-Host ""
-    Write-Host "Web installation completed successfully!" -ForegroundColor Green
+    Write-Host "Installation process completed!" -ForegroundColor Green
     if (-not $Silent) {
         Write-Host "You can close this window now." -ForegroundColor Gray
         Write-Host ""
         Read-Host "Press Enter to exit"
     }
 
-}
-catch {
+} catch {
     Write-Host ""
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
     Write-Host "  █                        ERROR                                 █" -ForegroundColor Red
     Write-Host "  █                                                              █" -ForegroundColor Red
-    Write-Host "  █                Web Installation Failed!                     █" -ForegroundColor Red
+    Write-Host "  █                Installation Failed!                         █" -ForegroundColor Red
     Write-Host "  █                                                              █" -ForegroundColor Red
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Red
     Write-Host ""
     Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host ""
     Write-Host "Please try the following:" -ForegroundColor Yellow
-    Write-Host "1. Check your internet connection" -ForegroundColor Gray
-    Write-Host "2. Run PowerShell as Administrator" -ForegroundColor Gray
-    Write-Host "3. Temporarily disable firewall/antivirus" -ForegroundColor Gray
-    Write-Host "4. Download manually from GitHub Releases" -ForegroundColor Gray
+    Write-Host "1. Run PowerShell as Administrator" -ForegroundColor Gray
+    Write-Host "2. Ensure gym-door-bridge.exe is present" -ForegroundColor Gray  
+    Write-Host "3. Check Windows Event Viewer for more details" -ForegroundColor Gray
+    Write-Host "4. Contact support with the error message above" -ForegroundColor Gray
     Write-Host ""
     if (-not $Silent) {
         Read-Host "Press Enter to exit"
     }
     exit 1
-}
-finally {
-    # Cleanup temp directory
-    if (Test-Path $tempDir) {
-        try {
-            Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        catch {
-            # Ignore cleanup errors
-        }
-    }
 }
