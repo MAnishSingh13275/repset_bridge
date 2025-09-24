@@ -5,7 +5,7 @@
 
 param(
     [string]$Version = "latest",
-    [string]$ReleaseUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/download/v1.0.0/GymDoorBridge-v1.0.0.zip",
+    [string]$ReleaseUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/GymDoorBridge-v1.0.0.zip",
     [string]$PairCode = "",
     [switch]$Silent = $false
 )
@@ -325,7 +325,7 @@ catch {
 }
 finally {
     # Cleanup temp directory
-    if (Test-Path $tempDir) {
+    if ($tempDir -and (Test-Path $tempDir)) {
         try {
             Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
