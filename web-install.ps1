@@ -219,23 +219,35 @@ try {
 
         # Start service
         Write-Step "7/8" "Starting service..."
+        Write-Info "Attempting to start service (this may take up to 30 seconds)..."
+        
         $startResult = & ".\gym-door-bridge.exe" service start 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Success "Service started successfully"
+            $serviceStarted = $true
         } else {
             Write-Warning "Service installation completed but failed to start automatically"
-            Write-Info "You can start it manually from Services.msc"
+            Write-Info "This is normal on first installation before pairing"
+            Write-Info "Start output: $startResult"
+            $serviceStarted = $false
         }
         Write-Host ""
 
         # Verify installation
         Write-Step "8/8" "Verifying installation..."
-        Start-Sleep -Seconds 3
-        $statusResult = & ".\gym-door-bridge.exe" service status 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Service is running and operational"
+        
+        # Check if service is installed (more important than running)
+        $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+        if ($service) {
+            Write-Success "Service is installed: $($service.Status)"
+            Write-Info "Service will start automatically on Windows boot"
+            
+            if (-not $serviceStarted) {
+                Write-Info "Service startup failed - this is often normal before device pairing"
+                Write-Info "After pairing, the service should start successfully"
+            }
         } else {
-            Write-Warning "Service status check inconclusive"
+            Write-Warning "Service installation verification failed"
         }
         Write-Host ""
 
