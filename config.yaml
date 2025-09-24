@@ -1,3 +1,17 @@
+adapter_configs:
+    simulator:
+        connection: local
+        device_config:
+            enrollment_delay: 5000
+            require_confirmation: true
+            success_rate: 0.8
+        device_type: simulator
+        settings:
+            eventinterval: 10
+            simulatedusers:
+                - sim_user_001
+                - sim_user_002
+                - sim_user_003
 api_server:
     auth:
         allowed_ips: []
@@ -53,25 +67,10 @@ api_server:
     tls_key_file: ""
     write_timeout: 30
 database_path: ./bridge.db
-device_id: bridge_1757094795232_01n7cwg7x
-device_key: b2ad67a9a5442d430ac0433830ed3b22273ad46c43f71d8f7e1b669b2182e39c
+device_id: ""
+device_key: ""
 enabled_adapters:
     - simulator
-
-adapter_configs:
-  simulator:
-    device_type: simulator
-    connection: local
-    device_config:
-      enrollment_delay: 5000  # 5 second delay for enrollment
-      success_rate: 0.8       # 80% success rate
-      require_confirmation: true
-    settings:
-      eventInterval: 10       # Generate events every 10 seconds
-      simulatedUsers:
-        - "sim_user_001"
-        - "sim_user_002"
-        - "sim_user_003"
 heartbeat_interval: 60
 log_file: ""
 log_level: info

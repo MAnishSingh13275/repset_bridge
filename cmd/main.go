@@ -200,8 +200,8 @@ func bridgeMain(ctx context.Context, cfg *config.Config) error {
 	logger.Info("Bridge shutting down gracefully")
 	return nil
 }
-// add
-WindowsInstallerCommands adds Windows installer commands
+
+// addWindowsInstallerCommands adds Windows installer commands
 func addWindowsInstallerCommands() {
 	var installCmd = &cobra.Command{
 		Use:   "install",

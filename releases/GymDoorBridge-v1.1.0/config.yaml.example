@@ -1,0 +1,85 @@
+# Gym Door Access Bridge Configuration
+# Copy this file to config.yaml and customize for your environment
+
+# Device configuration (set during pairing process)
+device_id: ""
+device_key: ""
+
+# Server configuration
+server_url: "https://repset.onezy.in"
+
+# Performance tier (auto-detected, can be overridden)
+# Options: lite, normal, full
+tier: "normal"
+
+# Queue configuration
+queue_max_size: 10000
+heartbeat_interval: 60  # seconds
+
+# Door control configuration
+unlock_duration: 3000  # milliseconds
+
+# Database configuration
+database_path: "./bridge.db"
+
+# Logging configuration
+log_level: "info"  # debug, info, warn, error
+log_file: ""       # empty for stdout only
+
+# Adapter configuration
+enabled_adapters:
+  - "simulator"
+  # - "fingerprint"
+  # - "rfid"
+  # - "webhook"
+
+# API Server configuration
+api_server:
+  enabled: true
+  port: 8081
+  host: "0.0.0.0"
+  tls_enabled: false
+  tls_cert_file: ""
+  tls_key_file: ""
+  read_timeout: 30   # seconds
+  write_timeout: 30  # seconds
+  idle_timeout: 120  # seconds
+  
+  # Authentication configuration
+  auth:
+    enabled: false
+    hmac_secret: ""           # HMAC-SHA256 secret for signature validation
+    jwt_secret: ""            # JWT signing secret
+    api_keys: []              # List of valid API keys
+    token_expiry: 3600        # JWT token expiry in seconds
+    allowed_ips: []           # IP allowlist (CIDR notation supported)
+  
+  # Rate limiting configuration
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60   # Maximum requests per minute per IP
+    burst_size: 10            # Burst allowance
+    window_size: 60           # Sliding window size in seconds
+    cleanup_interval: 300     # Cleanup interval in seconds
+  
+  # CORS configuration
+  cors:
+    enabled: true
+    allowed_origins: ["*"]    # Allowed origins (* for all)
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["Content-Type", "Authorization", "X-API-Key", "X-Requested-With"]
+    exposed_headers: ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+    allow_credentials: false
+    max_age: 86400           # Preflight cache time in seconds
+  
+  # Security headers configuration
+  security:
+    hsts_enabled: true
+    hsts_max_age: 31536000          # HSTS max age in seconds (1 year)
+    hsts_include_subdomains: true
+    csp_enabled: true
+    csp_directive: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+    frame_options: "DENY"           # DENY, SAMEORIGIN, or ALLOW-FROM
+    content_type_options: true      # X-Content-Type-Options: nosniff
+    xss_protection: true            # X-XSS-Protection: 1; mode=block
+    referrer_policy: "strict-origin-when-cross-origin"

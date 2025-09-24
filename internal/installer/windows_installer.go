@@ -194,6 +194,17 @@ func (w *WindowsInstaller) getDefaultConfig() map[string]interface{} {
 	}
 }
 
+// convertToMapStringMap converts map[string]interface{} to map[string]map[string]interface{}
+func convertToMapStringMap(input map[string]interface{}) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+	for key, value := range input {
+		if mapValue, ok := value.(map[string]interface{}); ok {
+			result[key] = mapValue
+		}
+	}
+	return result
+}
+
 // generateConfig generates the configuration file
 func (w *WindowsInstaller) generateConfig(deviceConfig map[string]interface{}) error {
 	// Load base configuration
@@ -218,15 +229,17 @@ func (w *WindowsInstaller) generateConfig(deviceConfig map[string]interface{}) e
 				AllowedHeaders: []string{"Content-Type", "Authorization", "X-API-Key", "X-Requested-With"},
 			},
 			RateLimit: config.RateLimitConfig{
-				Enabled:            true,
-				RequestsPerMinute:  60,
-				BurstSize:         10,
+				Enabled:        true,
+				RequestsPerMin: 60,
+				BurstSize:      10,
+				WindowSize:     60,
+				CleanupInterval: 300,
 			},
 		},
 		
 		// Device discovery configuration
 		EnabledAdapters: deviceConfig["enabled_adapters"].([]string),
-		AdapterConfigs:  deviceConfig["adapter_configs"].(map[string]interface{}),
+		AdapterConfigs:  convertToMapStringMap(deviceConfig["adapter_configs"].(map[string]interface{})),
 		
 		// Other settings
 		HeartbeatInterval: 60,

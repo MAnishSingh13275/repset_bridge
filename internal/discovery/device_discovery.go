@@ -422,7 +422,7 @@ func (d *DeviceDiscovery) GenerateAdapterConfig() map[string]interface{} {
 	adapters := make(map[string]interface{})
 	enabledAdapters := []string{}
 
-	for key, device := range d.devices {
+	for _, device := range d.devices {
 		if device.Status != "online" {
 			continue
 		}
