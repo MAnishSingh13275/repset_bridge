@@ -5,7 +5,7 @@
 
 param(
     [string]$Version = "latest",
-    [string]$ReleaseUrl = "https://github.com/YOUR-ORG/gym-door-bridge/releases/latest/download/GymDoorBridge-v1.0.0.zip",
+    [string]$ReleaseUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/GymDoorBridge-v1.0.0.zip",
     [string]$PairCode = "",
     [switch]$Silent = $false
 )
@@ -79,7 +79,7 @@ try {
     if ($Version -eq "latest") {
         try {
             Write-Info "Resolving latest release URL..."
-            $apiUrl = "https://api.github.com/repos/YOUR-ORG/gym-door-bridge/releases/latest"
+            $apiUrl = "https://api.github.com/repos/MAnishSingh13275/repset_bridge/releases/latest"
             $releaseInfo = Invoke-RestMethod -Uri $apiUrl -UserAgent "GymDoorBridge-WebInstaller"
             
             # Find the ZIP asset
