@@ -70,7 +70,7 @@ function Install-GymDoorBridge {
         
         # For now, we'll assume the executable is built and available
         # In production, this would download from GitHub releases
-        $downloadUrl = "https://github.com/your-org/gym-door-bridge/releases/download/$Version/gym-door-bridge-windows-amd64.exe"
+        $downloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/download/$Version/gym-door-bridge-windows-amd64.exe"
         $exePath = Join-Path $tempDir "gym-door-bridge.exe"
         
         # For development, copy from current directory if available

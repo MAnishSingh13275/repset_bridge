@@ -133,19 +133,53 @@ try {
     }
 
     # Find the installer files
-    $installerBat = Get-ChildItem -Path $extractDir -Name "GymDoorBridge-Installer.bat" -Recurse | Select-Object -First 1
-    $installerPs1 = Get-ChildItem -Path $extractDir -Name "GymDoorBridge-Installer.ps1" -Recurse | Select-Object -First 1
-    $executable = Get-ChildItem -Path $extractDir -Name "gym-door-bridge.exe" -Recurse | Select-Object -First 1
-
-    if (-not $executable) {
+    Write-Info "Searching for executable in extracted files..."
+    
+    # Try to find installer files (optional)
+    $installerBat = Get-ChildItem -Path $extractDir -Filter "GymDoorBridge-Installer.bat" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $installerPs1 = Get-ChildItem -Path $extractDir -Filter "GymDoorBridge-Installer.ps1" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    
+    # Try multiple approaches to find the executable
+    $executableFile = $null
+    
+    # Method 1: Direct search with -Filter
+    try {
+        $executableFile = Get-ChildItem -Path $extractDir -Filter "gym-door-bridge.exe" -Recurse -File -ErrorAction Stop | Select-Object -First 1
+    } catch {}
+    
+    # Method 2: Search with -Name if Filter failed
+    if (-not $executableFile) {
+        try {
+            $found = Get-ChildItem -Path $extractDir -Name "gym-door-bridge.exe" -Recurse -ErrorAction Stop | Select-Object -First 1
+            if ($found) {
+                $executableFile = Get-Item (Join-Path $extractDir $found)
+            }
+        } catch {}
+    }
+    
+    # Method 3: Manual search through all files
+    if (-not $executableFile) {
+        $allFiles = Get-ChildItem -Path $extractDir -Recurse -File -ErrorAction SilentlyContinue
+        $executableFile = $allFiles | Where-Object { $_.Name -eq "gym-door-bridge.exe" } | Select-Object -First 1
+    }
+    
+    if (-not $executableFile) {
+        Write-Info "Listing extracted files for debugging:"
+        try {
+            Get-ChildItem -Path $extractDir -Recurse -ErrorAction SilentlyContinue | ForEach-Object { 
+                Write-Host "  Found: $($_.Name) (Type: $($_.GetType().Name))" 
+            }
+        } catch {}
         throw "gym-door-bridge.exe not found in downloaded package"
     }
+    
+    Write-Info "Found executable: $($executableFile.FullName)"
 
     Write-Success "Extraction completed"
     Write-Host ""
 
     # Change to extracted directory for installation
-    $installDir = Split-Path $executable.FullName -Parent
+    $installDir = Split-Path $executableFile.FullName -Parent
     Push-Location $installDir
 
     try {

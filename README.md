@@ -19,11 +19,11 @@ Complete documentation is available in the [`docs/`](docs/) directory:
 **🚀 One-Click Web Install:**
 ```powershell
 # Run PowerShell as Administrator, then:
-iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/web-install.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
 ```
 
 **📦 Download & Install:**
-1. Download: [gym-door-bridge-windows.zip](https://github.com/your-org/gym-door-bridge/releases/latest)
+1. Download: [gym-door-bridge-windows.zip](https://github.com/MAnishSingh13275/repset_bridge/releases/latest)
 2. Extract and run `install.bat` as Administrator
 
 ### For Developers
