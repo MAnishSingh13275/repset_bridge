@@ -19,8 +19,8 @@ func (db *DB) InsertEvent(event *EventQueue) error {
 	}
 
 	query := `
-		INSERT INTO event_queue (event_id, external_user_id, timestamp, event_type, is_simulated, raw_data)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO event_queue (event_id, external_user_id, timestamp, event_type, is_simulated, device_id, raw_data)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	result, err := db.conn.Exec(query, 
@@ -29,6 +29,7 @@ func (db *DB) InsertEvent(event *EventQueue) error {
 		event.Timestamp, 
 		event.EventType, 
 		event.IsSimulated, 
+		event.DeviceID,
 		encryptedRawData,
 	)
 	if err != nil {
@@ -48,7 +49,7 @@ func (db *DB) InsertEvent(event *EventQueue) error {
 func (db *DB) GetUnsentEvents(limit int) ([]*EventQueue, error) {
 	query := `
 		SELECT id, event_id, external_user_id, timestamp, event_type, is_simulated, 
-		       raw_data, created_at, sent_at, retry_count
+		       device_id, raw_data, created_at, sent_at, retry_count
 		FROM event_queue 
 		WHERE sent_at IS NULL 
 		ORDER BY timestamp ASC 
@@ -73,6 +74,7 @@ func (db *DB) GetUnsentEvents(limit int) ([]*EventQueue, error) {
 			&event.Timestamp,
 			&event.EventType,
 			&event.IsSimulated,
+			&event.DeviceID,
 			&rawData,
 			&event.CreatedAt,
 			&event.SentAt,

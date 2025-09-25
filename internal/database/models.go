@@ -12,6 +12,7 @@ type EventQueue struct {
 	Timestamp      time.Time `json:"timestamp"`
 	EventType      string    `json:"event_type"`
 	IsSimulated    bool      `json:"is_simulated"`
+	DeviceID       string    `json:"device_id"`
 	RawData        string    `json:"raw_data,omitempty"` // Encrypted JSON
 	CreatedAt      time.Time `json:"created_at"`
 	SentAt         *time.Time `json:"sent_at,omitempty"`

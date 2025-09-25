@@ -370,6 +370,7 @@ func (q *sqliteQueueManager) standardEventToDBEvent(event types.StandardEvent) (
 		Timestamp:      event.Timestamp,
 		EventType:      event.EventType,
 		IsSimulated:    event.IsSimulated,
+		DeviceID:       event.DeviceID,
 		RawData:        rawDataJSON,
 		CreatedAt:      time.Now(),
 		RetryCount:     0,
@@ -385,6 +386,7 @@ func (q *sqliteQueueManager) dbEventToQueuedEvent(dbEvent *database.EventQueue) 
 		Timestamp:      dbEvent.Timestamp,
 		EventType:      dbEvent.EventType,
 		IsSimulated:    dbEvent.IsSimulated,
+		DeviceID:       dbEvent.DeviceID,
 	}
 	
 	// Deserialize raw data if present
@@ -529,7 +531,7 @@ func (q *sqliteQueueManager) QueryEvents(ctx context.Context, filter EventQueryF
 	// Build main query with pagination
 	query := fmt.Sprintf(`
 		SELECT id, event_id, external_user_id, timestamp, event_type, is_simulated, 
-		       raw_data, created_at, sent_at, retry_count
+		       device_id, raw_data, created_at, sent_at, retry_count
 		FROM event_queue %s %s
 		LIMIT ? OFFSET ?
 	`, whereClause, orderBy)
@@ -555,6 +557,7 @@ func (q *sqliteQueueManager) QueryEvents(ctx context.Context, filter EventQueryF
 			&dbEvent.Timestamp,
 			&dbEvent.EventType,
 			&dbEvent.IsSimulated,
+			&dbEvent.DeviceID,
 			&rawData,
 			&dbEvent.CreatedAt,
 			&sentAt,

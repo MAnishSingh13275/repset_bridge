@@ -11,11 +11,14 @@ import (
 
 	"gym-door-bridge/internal/adapters"
 	"gym-door-bridge/internal/api"
+	"gym-door-bridge/internal/auth"
+	"gym-door-bridge/internal/client"
 	"gym-door-bridge/internal/config"
 	"gym-door-bridge/internal/database"
 	"gym-door-bridge/internal/door"
 	"gym-door-bridge/internal/health"
 	"gym-door-bridge/internal/logging"
+	"gym-door-bridge/internal/processor"
 	"gym-door-bridge/internal/queue"
 	"gym-door-bridge/internal/tier"
 	"gym-door-bridge/internal/types"
@@ -34,6 +37,8 @@ type Manager struct {
 	tierDetector    *tier.Detector
 	healthMonitor   *health.HealthMonitor
 	doorController  *door.DoorController
+	eventProcessor  *processor.EventProcessorImpl
+	submissionService *client.SubmissionService
 	
 	// API server
 	apiServer       *api.Server
@@ -132,21 +137,38 @@ func (m *Manager) initializeComponents() error {
 	}))
 	m.adapterManager = adapters.NewAdapterManager(slogLogger)
 	
+	// Initialize event processor
+	m.eventProcessor = processor.NewEventProcessor(db, m.logger)
+	processorConfig := processor.ProcessorConfig{
+		DeviceID:            m.deviceID,
+		EnableDeduplication: true,
+		DeduplicationWindow: 300, // 5 minutes
+	}
+	if err := m.eventProcessor.Initialize(m.ctx, processorConfig); err != nil {
+		return fmt.Errorf("failed to initialize event processor: %w", err)
+	}
+	
 	// Set up event callback for adapters
 	m.adapterManager.OnEvent(func(event types.RawHardwareEvent) {
-		// Convert RawHardwareEvent to StandardEvent
-		standardEvent := types.StandardEvent{
-			EventID:        fmt.Sprintf("%s-%d", m.deviceID, time.Now().UnixNano()),
-			ExternalUserID: event.ExternalUserID,
-			Timestamp:      event.Timestamp,
-			EventType:      event.EventType,
-			IsSimulated:    false, // Assume real events from adapters
-			DeviceID:       m.deviceID,
-			RawData:        event.RawData,
+		// Process the raw event through the processor for deduplication and validation
+		result, err := m.eventProcessor.ProcessEvent(m.ctx, event)
+		if err != nil {
+			m.logger.WithError(err).Error("Failed to process event from adapter")
+			return
 		}
 		
-		if err := m.queueManager.Enqueue(m.ctx, standardEvent); err != nil {
-			m.logger.WithError(err).Error("Failed to enqueue event from adapter")
+		if !result.Processed {
+			m.logger.WithFields(logrus.Fields{
+				"external_user_id": event.ExternalUserID,
+				"event_type":       event.EventType,
+				"reason":           result.Reason,
+			}).Debug("Event not processed", "reason", result.Reason)
+			return
+		}
+		
+		// Enqueue the processed standard event
+		if err := m.queueManager.Enqueue(m.ctx, result.Event); err != nil {
+			m.logger.WithError(err).Error("Failed to enqueue processed event")
 		}
 	})
 	
@@ -182,6 +204,40 @@ func (m *Manager) initializeComponents() error {
 		&adapterRegistryWrapper{m.adapterManager},
 		door.WithLogger(m.logger.WithField("component", "door").Logger),
 	)
+	
+	// Initialize submission service for offline event queuing
+	authManager, err := auth.NewAuthManager()
+	if err != nil {
+		return fmt.Errorf("failed to create auth manager: %w", err)
+	}
+	if err := authManager.Initialize(); err != nil {
+		return fmt.Errorf("failed to initialize auth manager: %w", err)
+	}
+	
+	httpClient, err := client.NewHTTPClient(m.config, authManager, m.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+	checkinClient := client.NewCheckinClient(httpClient, m.logger)
+	m.submissionService = client.NewSubmissionService(m.queueManager, checkinClient, m.logger)
+	
+	// Configure submission service based on tier
+	submissionConfig := client.DefaultSubmissionConfig()
+	switch database.PerformanceTier(m.config.Tier) {
+	case database.TierLite:
+		submissionConfig.BatchSize = 10
+		submissionConfig.SubmitInterval = 60 * time.Second
+		submissionConfig.MaxRetries = 3
+	case database.TierNormal:
+		submissionConfig.BatchSize = 50
+		submissionConfig.SubmitInterval = 30 * time.Second
+		submissionConfig.MaxRetries = 5
+	case database.TierFull:
+		submissionConfig.BatchSize = 100
+		submissionConfig.SubmitInterval = 15 * time.Second
+		submissionConfig.MaxRetries = 10
+	}
+	m.submissionService.SetConfig(submissionConfig)
 	
 	// Initialize API server if enabled
 	if m.config.APIServer.Enabled {
@@ -247,6 +303,12 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err := m.doorController.Start(m.ctx); err != nil {
 		return fmt.Errorf("failed to start door controller: %w", err)
 	}
+	
+	// Start submission service for automatic event submission
+	go func() {
+		m.logger.Info("Starting periodic event submission service")
+		m.submissionService.StartPeriodicSubmission(m.ctx)
+	}()
 	
 	// Start API server if enabled
 	if m.apiServer != nil {
@@ -410,6 +472,16 @@ func (m *Manager) GetStats() map[string]interface{} {
 			if queueStats, err := m.queueManager.GetStats(m.ctx); err == nil {
 				stats["queue"] = queueStats
 			}
+		}
+		
+		if m.submissionService != nil {
+			if submissionStats, err := m.submissionService.GetQueueStats(m.ctx); err == nil {
+				stats["submission"] = submissionStats
+			}
+		}
+		
+		if m.eventProcessor != nil {
+			stats["processor"] = m.eventProcessor.GetStats()
 		}
 		
 		if m.tierDetector != nil {
