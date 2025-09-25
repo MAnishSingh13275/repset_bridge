@@ -67,8 +67,8 @@ api_server:
     tls_key_file: ""
     write_timeout: 30
 database_path: ./bridge.db
-device_id: ""
-device_key: ""
+device_id: bridge_1758823101713_1d70pbgcx
+device_key: 367be407d1bcf03fc50ace327b4b7785b1232142a6c4424986a205cd8eaebcf3
 enabled_adapters:
     - simulator
 heartbeat_interval: 60
