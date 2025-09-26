@@ -167,14 +167,99 @@ try {
         throw "Failed to create configuration file"
     }
     
-    # Install service using Windows SC command directly (bypassing old installer logic)
+    # Install service using multiple methods for maximum compatibility
     Write-Info "Installing Windows service..."
-    $serviceInstallResult = & sc.exe create "GymDoorBridge" binPath= "`"$targetExe`" --config `"$configPath`"" start= auto DisplayName= "RepSet Gym Door Bridge"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Service installation failed"
+    
+    $serviceInstalled = $false
+    $serviceName = "GymDoorBridge"
+    $serviceDisplayName = "RepSet Gym Door Bridge"
+    $servicePath = "`"$targetExe`" --config `"$configPath`""
+    
+    # Method 1: Try executable's built-in service install
+    Write-Info "Attempting Method 1: Built-in service installer..."
+    try {
+        Push-Location $installPath
+        $installResult = & ".\gym-door-bridge.exe" service install --config ".\config.yaml" 2>&1
+        Write-Info "Built-in installer output: $installResult"
+        Write-Info "Exit code: $LASTEXITCODE"
+        
+        # Check for specific error messages that should not fail the installation
+        $serviceFailureMessages = @(
+            "Service installation failed",
+            "service already exists",
+            "access denied",
+            "insufficient privileges"
+        )
+        
+        $hasServiceFailure = $false
+        foreach ($msg in $serviceFailureMessages) {
+            if ($installResult -match $msg) {
+                Write-Warning "Service installation issue detected: $msg"
+                $hasServiceFailure = $true
+                break
+            }
+        }
+        
+        # Check if service was actually created regardless of exit code or error messages
+        Start-Sleep -Seconds 1  # Give Windows time to register the service
+        $serviceCheck = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+        if ($serviceCheck) {
+            Write-Success "Service installed using built-in installer (verified)"
+            $serviceInstalled = $true
+        } elseif ($LASTEXITCODE -eq 0 -and -not $hasServiceFailure) {
+            Write-Success "Service installed using built-in installer (exit code 0)"
+            $serviceInstalled = $true
+        } else {
+            Write-Warning "Built-in installer failed (exit code: $LASTEXITCODE)"
+            Write-Info "Output: $installResult"
+            if ($hasServiceFailure) {
+                Write-Info "Service failure detected - will try alternative methods"
+            }
+        }
+        Pop-Location
+    } catch {
+        Write-Warning "Built-in installer error: $($_.Exception.Message)"
+        if (Test-Path $installPath) { Pop-Location }
     }
     
-    Write-Success "Service installed successfully"
+    # Method 2: Try Windows SC command if built-in failed
+    if (-not $serviceInstalled) {
+        Write-Info "Attempting Method 2: Windows SC command..."
+        try {
+            $scResult = & sc.exe create $serviceName binPath= $servicePath start= auto DisplayName= $serviceDisplayName 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Service installed using SC command"
+                $serviceInstalled = $true
+            } else {
+                Write-Warning "SC command failed: $scResult"
+            }
+        } catch {
+            Write-Warning "SC command error: $($_.Exception.Message)"
+        }
+    }
+    
+    # Method 3: Try PowerShell New-Service if SC failed
+    if (-not $serviceInstalled) {
+        Write-Info "Attempting Method 3: PowerShell New-Service..."
+        try {
+            New-Service -Name $serviceName -BinaryPathName $servicePath -DisplayName $serviceDisplayName -StartupType Automatic -ErrorAction Stop
+            Write-Success "Service installed using PowerShell New-Service"
+            $serviceInstalled = $true
+        } catch {
+            Write-Warning "PowerShell New-Service error: $($_.Exception.Message)"
+        }
+    }
+    
+    # Service installation complete - continue regardless of result
+    if (-not $serviceInstalled) {
+        Write-Warning "Windows service could not be installed automatically"
+        Write-Info "This is common and does NOT affect bridge functionality"
+        Write-Info "Bridge will work manually, but won't auto-start with Windows"
+        Write-Info "Manual start command: & '$targetExe' --config '$configPath'"
+        Write-Info "Installation continuing successfully..."
+    } else {
+        Write-Success "Windows service installed successfully"
+    }
 
     # Pair the device immediately
     Write-Step "7/7" "Pairing with RepSet platform..."
@@ -189,14 +274,19 @@ try {
         if ($pairProcess.ExitCode -eq 0) {
             Write-Success "Device paired successfully!"
             
-            # Try to start the service
-            Write-Info "Starting service..."
-            try {
-                Start-Service -Name "GymDoorBridge" -ErrorAction Stop
-                Write-Success "Service started successfully"
-            } catch {
-                Write-Warning "Service installed and paired but needs manual start"
-                Write-Info "You can start it from Services.msc or restart Windows"
+            # Try to start the service if it was installed
+            if ($serviceInstalled) {
+                Write-Info "Starting service..."
+                try {
+                    Start-Service -Name "GymDoorBridge" -ErrorAction Stop
+                    Write-Success "Service started successfully"
+                } catch {
+                    Write-Warning "Service installed and paired but needs manual start"
+                    Write-Info "You can start it from Services.msc or restart Windows"
+                }
+            } else {
+                Write-Info "Service not installed - bridge can be started manually"
+                Write-Info "To start: & '$targetExe' --config '$configPath'"
             }
             
         } else {
@@ -208,14 +298,18 @@ try {
             
             if ($errorOutput -match "already paired") {
                 Write-Success "Device is already paired with RepSet!"
-                Write-Info "Starting service..."
-                try {
-                    Start-Service -Name "GymDoorBridge" -ErrorAction Stop
-                    Write-Success "Service started successfully"
-                } catch {
-                    Write-Warning "Service paired but needs manual start"
+                if ($serviceInstalled) {
+                    Write-Info "Starting service..."
+                    try {
+                        Start-Service -Name "GymDoorBridge" -ErrorAction Stop
+                        Write-Success "Service started successfully"
+                    } catch {
+                        Write-Warning "Service paired but needs manual start"
+                    }
+                } else {
+                    Write-Info "Bridge paired but service not installed - can be started manually"
                 }
-            } else {
+            }
                 Write-Warning "Pairing completed with exit code: $($pairProcess.ExitCode)"
                 Write-Info "Error details: $errorOutput"
             }
@@ -233,7 +327,11 @@ try {
     Write-Host "  ================================================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  [OK] RepSet Gym Door Bridge installed successfully" -ForegroundColor Green
-    Write-Host "  [OK] Service configured for automatic startup" -ForegroundColor Green
+    if ($serviceInstalled) {
+        Write-Host "  [OK] Service configured for automatic startup" -ForegroundColor Green
+    } else {
+        Write-Host "  [!] Service not installed - manual start required" -ForegroundColor Yellow
+    }
     Write-Host "  [OK] Device pairing completed" -ForegroundColor Green
     Write-Host "  [OK] Ready for gym door access management" -ForegroundColor Green
     Write-Host ""
