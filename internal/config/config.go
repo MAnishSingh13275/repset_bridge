@@ -113,7 +113,7 @@ type SecurityConfig struct {
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
 	return &Config{
-		ServerURL:         "https://api.repset.onezy.in",
+		ServerURL:         "https://repset.onezy.in",
 		Tier:              "normal",
 		QueueMaxSize:      10000,
 		HeartbeatInterval: 60,

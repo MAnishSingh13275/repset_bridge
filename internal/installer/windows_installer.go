@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"gym-door-bridge/internal/config"
 	"gym-door-bridge/internal/discovery"
 	"gym-door-bridge/internal/logging"
 
@@ -207,45 +206,39 @@ func convertToMapStringMap(input map[string]interface{}) map[string]map[string]i
 
 // generateConfig generates the configuration file
 func (w *WindowsInstaller) generateConfig(deviceConfig map[string]interface{}) error {
-	// Load base configuration
-	baseConfig := &config.Config{
-		ServerURL:    "https://your-platform.com", // Will be updated during pairing
-		DeviceID:     "",                          // Will be set during pairing
-		DeviceKey:    "",                          // Will be set during pairing
-		DatabasePath: filepath.Join(w.installPath, "bridge.db"),
-		LogLevel:     "info",
-		LogFile:      filepath.Join(w.installPath, "logs", "bridge.log"),
-		Tier:         "normal",
+	// Create simple config structure that matches executable expectations
+	baseConfig := map[string]interface{}{
+		// Device configuration (set during pairing process)
+		"device_id":  "",
+		"device_key": "",
 		
-		// API Server configuration
-		APIServer: config.APIServerConfig{
-			Enabled: true,
-			Host:    "localhost",
-			Port:    8081,
-			CORS: config.CORSConfig{
-				Enabled:        true,
-				AllowedOrigins: []string{"*"},
-				AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-				AllowedHeaders: []string{"Content-Type", "Authorization", "X-API-Key", "X-Requested-With"},
-			},
-			RateLimit: config.RateLimitConfig{
-				Enabled:        true,
-				RequestsPerMin: 60,
-				BurstSize:      10,
-				WindowSize:     60,
-				CleanupInterval: 300,
-			},
-		},
+		// Server configuration
+		"server_url": "https://repset.onezy.in",
 		
-		// Device discovery configuration
-		EnabledAdapters: deviceConfig["enabled_adapters"].([]string),
-		AdapterConfigs:  convertToMapStringMap(deviceConfig["adapter_configs"].(map[string]interface{})),
+		// Performance tier
+		"tier": "normal",
 		
-		// Other settings
-		HeartbeatInterval: 60,
-		QueueMaxSize:     10000,
-		UnlockDuration:   3000,
-		UpdatesEnabled:   true,
+		// Queue configuration
+		"queue_max_size":      10000,
+		"heartbeat_interval":  60,
+		
+		// Door control configuration
+		"unlock_duration": 3000,
+		
+		// Database configuration
+		"database_path": "./bridge.db",
+		
+		// Logging configuration
+		"log_level": "info",
+		"log_file":  "",
+		
+		// Adapter configuration
+		"enabled_adapters": deviceConfig["enabled_adapters"],
+	}
+	
+	// Add adapter configs if they exist
+	if adapterConfigs, ok := deviceConfig["adapter_configs"]; ok {
+		baseConfig["adapter_configs"] = adapterConfigs
 	}
 
 	// Create logs directory
