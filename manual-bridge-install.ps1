@@ -10,10 +10,10 @@ param(
 $ErrorActionPreference = "Continue"  # Don't stop on errors
 
 # Color functions
-function Write-Success { param([string]$Message) Write-Host "✅ $Message" -ForegroundColor Green }
-function Write-Error { param([string]$Message) Write-Host "❌ $Message" -ForegroundColor Red }
-function Write-Warning { param([string]$Message) Write-Host "⚠️  $Message" -ForegroundColor Yellow }
-function Write-Info { param([string]$Message) Write-Host "ℹ️  $Message" -ForegroundColor Cyan }
+function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
+function Write-Error { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Warning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Step { param([string]$Step, [string]$Message) Write-Host "[$Step] $Message" -ForegroundColor White }
 
 Write-Host "=================================================" -ForegroundColor Blue
@@ -139,7 +139,7 @@ enabled_adapters:
     # Installation complete
     Write-Host ""
     Write-Host "=================================================" -ForegroundColor Green
-    Write-Host "    ✅ INSTALLATION COMPLETE!" -ForegroundColor Green
+    Write-Host "    INSTALLATION COMPLETE!" -ForegroundColor Green
     Write-Host "=================================================" -ForegroundColor Green
     Write-Host ""
     Write-Success "Bridge installed to: $installPath"
@@ -157,7 +157,7 @@ enabled_adapters:
 } catch {
     Write-Host ""
     Write-Host "=================================================" -ForegroundColor Red
-    Write-Host "    ❌ INSTALLATION FAILED" -ForegroundColor Red
+    Write-Host "    INSTALLATION FAILED" -ForegroundColor Red
     Write-Host "=================================================" -ForegroundColor Red
     Write-Error "Error: $($_.Exception.Message)"
     Write-Host ""

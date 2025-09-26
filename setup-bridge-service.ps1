@@ -6,10 +6,10 @@
 $ErrorActionPreference = "Continue"
 
 # Color functions
-function Write-Success { param([string]$Message) Write-Host "✅ $Message" -ForegroundColor Green }
-function Write-Error { param([string]$Message) Write-Host "❌ $Message" -ForegroundColor Red }
-function Write-Warning { param([string]$Message) Write-Host "⚠️  $Message" -ForegroundColor Yellow }
-function Write-Info { param([string]$Message) Write-Host "ℹ️  $Message" -ForegroundColor Cyan }
+function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
+function Write-Error { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Warning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 
 Write-Host "=================================================" -ForegroundColor Blue
 Write-Host "    RepSet Bridge Service Setup" -ForegroundColor Blue
@@ -114,7 +114,7 @@ try {
                 Write-Info "You can try starting it manually from Services.msc"
             }
         } else {
-            throw "sc.exe failed with exit code $LASTEXITCODE: $scResult"
+            throw "sc.exe failed with exit code $LASTEXITCODE - $scResult"
         }
     } catch {
         Write-Warning "sc.exe method failed: $($_.Exception.Message)"
@@ -143,7 +143,7 @@ try {
     # Final status check
     Write-Host ""
     Write-Host "=================================================" -ForegroundColor Green
-    Write-Host "    ✅ SERVICE SETUP COMPLETE!" -ForegroundColor Green
+    Write-Host "    SERVICE SETUP COMPLETE!" -ForegroundColor Green
     Write-Host "=================================================" -ForegroundColor Green
     Write-Host ""
     
@@ -166,7 +166,7 @@ try {
 } catch {
     Write-Host ""
     Write-Host "=================================================" -ForegroundColor Red
-    Write-Host "    ❌ SERVICE SETUP FAILED" -ForegroundColor Red
+    Write-Host "    SERVICE SETUP FAILED" -ForegroundColor Red
     Write-Host "=================================================" -ForegroundColor Red
     Write-Error "Error: $($_.Exception.Message)"
     Write-Host ""
