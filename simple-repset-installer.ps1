@@ -33,9 +33,9 @@ tier: "normal"
 queue_max_size: 10000
 heartbeat_interval: 60
 unlock_duration: 3000
-database_path: "./bridge.db"
+database_path: "$($env:USERPROFILE.Replace('\', '/'))/Documents/bridge.db"
 log_level: "info"
-log_file: ""
+log_file: "$($env:USERPROFILE.Replace('\', '/'))/Documents/bridge.log"
 enabled_adapters:
   - "simulator"
 '@
@@ -157,7 +157,7 @@ try {
     # Install to Program Files
     $installPath = "$env:ProgramFiles\GymDoorBridge"
     $targetExe = "$installPath\gym-door-bridge.exe"
-    $configPath = "$installPath\config.yaml"
+    $configPath = "$env:USERPROFILE\Documents\repset-bridge-config.yaml"
     
     New-Item -ItemType Directory -Path $installPath -Force | Out-Null
     Copy-Item -Path $executableFile.FullName -Destination $targetExe -Force
@@ -167,6 +167,7 @@ try {
     }
     
     Write-Success "Bridge installed to: $installPath"
+    Write-Info "Config file: $configPath"
 
     Write-Step "5/6" "Pairing with RepSet platform..."
     $paired = Pair-Bridge -ExePath $targetExe -ConfigPath $configPath -PairCode $PairCode
@@ -201,6 +202,7 @@ try {
     } else {
         Write-Warning "Service not installed - manual start required"
         Write-Info "Manual start: & '$targetExe' --config '$configPath'"
+        Write-Info "Create service manually: Run PowerShell as Admin and use service-setup.ps1"
     }
     
     Write-Host ""
