@@ -49,6 +49,9 @@ jobs:
         copy install.bat release\
         copy install.ps1 release\
         copy web-install.ps1 release\
+        copy enhanced-bridge-installer.ps1 release\
+        copy GymDoorBridge-Installer.ps1 release\
+        copy install-gym-bridge-fixed.ps1 release\
         copy README.md release\
         copy INSTALLATION.md release\
         copy DOWNLOAD.md release\
@@ -86,6 +89,8 @@ jobs:
           - ✅ Support for ZKTeco, ESSL, Realtime devices
           - ✅ Real-time member check-in sync
           - ✅ Zero-configuration setup
+          - ⭐ **NEW**: Smart pairing with automatic unpair/re-pair capability
+          - ⭐ **NEW**: Enhanced error handling and recovery
           
           ### System Requirements
           - Windows 10/11 or Windows Server 2016+
@@ -99,6 +104,9 @@ jobs:
           install.bat
           install.ps1
           web-install.ps1
+          enhanced-bridge-installer.ps1
+          GymDoorBridge-Installer.ps1
+          install-gym-bridge-fixed.ps1
         draft: false
         prerelease: false
       env:

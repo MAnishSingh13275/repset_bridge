@@ -1,7 +1,8 @@
 # ================================================================
-# Gym Door Bridge - Enhanced Web Installer (One-Click from Website)
+# Gym Door Bridge - Platform-Hosted Enhanced Web Installer
 # Downloads, extracts, and installs automatically from the web
 # Features smart pairing with automatic unpair/re-pair capability
+# Hosted version for platform integration
 # ================================================================
 
 param(
@@ -14,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Set up console
-$Host.UI.RawUI.WindowTitle = "Gym Door Bridge Web Installer"
+$Host.UI.RawUI.WindowTitle = "Gym Door Bridge Platform Installer"
 if (-not $Silent) {
     Clear-Host
 }
@@ -31,15 +32,16 @@ if (-not $Silent) {
     Write-Host ""
     Write-Host "  ================================================================" -ForegroundColor Green
     Write-Host "  |                                                              |" -ForegroundColor Green
-    Write-Host "  |         GYM DOOR BRIDGE ENHANCED WEB INSTALLER              |" -ForegroundColor Green
+    Write-Host "  |      GYM DOOR BRIDGE PLATFORM INSTALLER (ENHANCED)          |" -ForegroundColor Green
     Write-Host "  |                                                              |" -ForegroundColor Green
-    Write-Host "  |      Downloads, installs with smart pairing support        |" -ForegroundColor Green
+    Write-Host "  |    Smart Pairing • Auto-Unpair • Zero Configuration         |" -ForegroundColor Green
     Write-Host "  |                                                              |" -ForegroundColor Green
     Write-Host "  ================================================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Version: $Version" -ForegroundColor Gray
     Write-Host "  Source: GitHub Release" -ForegroundColor Gray
     Write-Host "  Smart Pairing: Enabled" -ForegroundColor Gray
+    Write-Host "  Platform Integration: Enabled" -ForegroundColor Gray
     Write-Host ""
 }
 
@@ -82,7 +84,7 @@ try {
         try {
             Write-Info "Resolving latest release URL..."
             $apiUrl = "https://api.github.com/repos/MAnishSingh13275/repset_bridge/releases/latest"
-            $releaseInfo = Invoke-RestMethod -Uri $apiUrl -UserAgent "GymDoorBridge-WebInstaller"
+            $releaseInfo = Invoke-RestMethod -Uri $apiUrl -UserAgent "GymDoorBridge-PlatformInstaller"
             
             # Find the ZIP asset
             $zipAsset = $releaseInfo.assets | Where-Object { $_.name -match "GymDoorBridge-v.*\.zip" } | Select-Object -First 1
@@ -136,10 +138,6 @@ try {
 
     # Find the installer files
     Write-Info "Searching for executable in extracted files..."
-    
-    # Try to find installer files (optional)
-    $installerBat = Get-ChildItem -Path $extractDir -Filter "GymDoorBridge-Installer.bat" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    $installerPs1 = Get-ChildItem -Path $extractDir -Filter "GymDoorBridge-Installer.ps1" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
     
     # Try multiple approaches to find the executable
     $executableFile = $null
@@ -270,17 +268,19 @@ try {
     Write-Host "  [OK] Auto-discovery completed for biometric devices" -ForegroundColor Green
     Write-Host "  [OK] Service configured to start automatically on boot" -ForegroundColor Green
     Write-Host "  [OK] Smart pairing with auto-unpair capability enabled" -ForegroundColor Green
+    Write-Host "  [OK] Ready for platform integration" -ForegroundColor Green
     Write-Host ""
 
     if (-not $Silent) {
         Write-Host "  ================================================================" -ForegroundColor Cyan
-        Write-Host "  |                      NEXT STEPS                             |" -ForegroundColor Cyan
+        Write-Host "  |                 PLATFORM INTEGRATION READY                  |" -ForegroundColor Cyan
         Write-Host "  ================================================================" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  ★ SMART PAIRING ENABLED:" -ForegroundColor Yellow
         Write-Host "     • Automatically detects if device is already paired" -ForegroundColor Gray
         Write-Host "     • Runs unpair --force and re-pairs automatically" -ForegroundColor Gray
         Write-Host "     • Eliminates manual intervention for paired devices" -ForegroundColor Gray
+        Write-Host "     • Perfect for platform-driven installations" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  1. PAIR YOUR DEVICE:" -ForegroundColor White
         Write-Host "     • Get pairing code from your admin portal" -ForegroundColor Gray
@@ -292,10 +292,10 @@ try {
         Write-Host "     • Check Windows Services (services.msc)" -ForegroundColor Gray
         Write-Host "     • View Windows Event Viewer for logs" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  3. MANAGE SERVICE:" -ForegroundColor White
-        Write-Host "     • All management tools available in Start Menu" -ForegroundColor Gray
+        Write-Host "  3. PLATFORM INTEGRATION:" -ForegroundColor White
         Write-Host "     • Service runs automatically on Windows startup" -ForegroundColor Gray
         Write-Host "     • No daily maintenance required" -ForegroundColor Gray
+        Write-Host "     • Smart pairing reduces support tickets" -ForegroundColor Gray
         Write-Host ""
     }
 
@@ -305,17 +305,17 @@ try {
         
         Push-Location $InstallDirectory
         try {
-            Write-Host "🔄 Smart Pairing: Attempting to pair device with code: $Code" -ForegroundColor Yellow
+            Write-Host "🔄 Platform Smart Pairing: Attempting to pair device with code: $Code" -ForegroundColor Yellow
             $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $Code 2>&1
             
             if ($LASTEXITCODE -eq 0) {
                 Write-Host ""
                 Write-Success "Device paired successfully!"
-                Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
+                Write-Host "Your gym door bridge is now fully operational and integrated with the platform!" -ForegroundColor Green
                 return $true
             } elseif ($pairResult -match "already paired|device is already paired") {
                 Write-Host ""
-                Write-Warning "Device is already paired - initiating smart re-pairing process..."
+                Write-Warning "Device is already paired - initiating platform smart re-pairing process..."
                 
                 # Attempt to unpair with force flag
                 Write-Info "🔧 Running unpair command with --force flag..."
@@ -323,20 +323,20 @@ try {
                 
                 if ($LASTEXITCODE -eq 0) {
                     Write-Success "Device unpaired successfully"
-                    Write-Info "🔄 Retrying pairing with current code..."
+                    Write-Info "🔄 Retrying pairing with platform code..."
                     
                     # Retry pairing
                     $retryResult = & ".\gym-door-bridge.exe" pair --pair-code $Code 2>&1
                     if ($LASTEXITCODE -eq 0) {
                         Write-Host ""
-                        Write-Success "🎉 Device re-paired successfully!"
-                        Write-Host "Your gym door bridge is now fully operational with the latest pairing code!" -ForegroundColor Green
+                        Write-Success "🎉 Device re-paired successfully with platform!"
+                        Write-Host "Your gym door bridge is now fully operational with the latest platform pairing code!" -ForegroundColor Green
                         return $true
                     } else {
                         Write-Host ""
                         Write-Error "Re-pairing failed after successful unpair"
                         Write-Host "Retry output: $retryResult" -ForegroundColor Red
-                        Write-Info "The device was unpaired but re-pairing failed. Please check your pairing code."
+                        Write-Info "The device was unpaired but re-pairing failed. Please verify your platform pairing code."
                         return $false
                     }
                 } else {
@@ -351,7 +351,7 @@ try {
                 Write-Host ""
                 Write-Error "Pairing failed for unknown reason"
                 Write-Host "Pairing output: $pairResult" -ForegroundColor Red
-                Write-Info "Please verify your pairing code and network connectivity"
+                Write-Info "Please verify your platform pairing code and network connectivity"
                 return $false
             }
         }
@@ -363,22 +363,23 @@ try {
     # Handle pairing with enhanced smart pairing logic
     if ($PairCode) {
         Write-Host ""
-        Write-Host "🚀 Initiating smart pairing with provided code..." -ForegroundColor Cyan
+        Write-Host "🚀 Initiating platform smart pairing with provided code..." -ForegroundColor Cyan
         $pairSuccess = Invoke-SmartPairing -Code $PairCode -InstallDirectory $installDir
         if (-not $pairSuccess) {
-            Write-Warning "Smart pairing unsuccessful. You can try again later using:"
+            Write-Warning "Platform smart pairing unsuccessful. You can try again later using:"
             Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
+            Write-Host "Or contact your platform administrator for support" -ForegroundColor Cyan
         }
     } elseif (-not $Silent) {
         Write-Host ""
-        $pairNow = Read-Host "🔗 Would you like to pair your device now using smart pairing? (Y/n)"
+        $pairNow = Read-Host "🔗 Would you like to pair your device now using platform smart pairing? (Y/n)"
         if ($pairNow.ToLower() -ne "n") {
-            $inputCode = Read-Host "Enter your pairing code"
+            $inputCode = Read-Host "Enter your platform pairing code"
             if ($inputCode.Trim()) {
                 Write-Host ""
                 $pairSuccess = Invoke-SmartPairing -Code $inputCode.Trim() -InstallDirectory $installDir
                 if (-not $pairSuccess) {
-                    Write-Warning "Smart pairing unsuccessful. You can try again later using:"
+                    Write-Warning "Platform smart pairing unsuccessful. You can try again later using:"
                     Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
                 }
             }
@@ -386,36 +387,38 @@ try {
     }
 
     Write-Host ""
-    Write-Host "✅ Enhanced web installation completed successfully!" -ForegroundColor Green
+    Write-Host "✅ Enhanced platform installation completed successfully!" -ForegroundColor Green
     if (-not $Silent) {
-        Write-Host "Your gym door bridge now includes smart pairing capabilities." -ForegroundColor Gray
+        Write-Host "Your gym door bridge is now ready for platform integration with smart pairing capabilities." -ForegroundColor Gray
         Write-Host "You can close this window now." -ForegroundColor Gray
         Write-Host ""
         Read-Host "Press Enter to exit"
     }
 
-}
-catch {
-    Write-Host ""
-    Write-Host "  ================================================================" -ForegroundColor Red
-    Write-Host "  |                        ERROR                                 |" -ForegroundColor Red
-    Write-Host "  |                                                              |" -ForegroundColor Red
-    Write-Host "  |                Web Installation Failed!                     |" -ForegroundColor Red
-    Write-Host "  |                                                              |" -ForegroundColor Red
-    Write-Host "  ================================================================" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Please try the following:" -ForegroundColor Yellow
-    Write-Host "1. Check your internet connection" -ForegroundColor Gray
-    Write-Host "2. Run PowerShell as Administrator" -ForegroundColor Gray
-    Write-Host "3. Temporarily disable firewall/antivirus" -ForegroundColor Gray
-    Write-Host "4. Download manually from GitHub Releases" -ForegroundColor Gray
-    Write-Host ""
-    if (-not $Silent) {
-        Read-Host "Press Enter to exit"
+} catch {
+    # Only catch real installation failures, not pairing issues
+    if ($_.Exception.Message -notmatch "already paired" -and $_.Exception.Message -notmatch "pairing") {
+        Write-Host ""
+        Write-Host "  ================================================================" -ForegroundColor Red
+        Write-Host "  |                        ERROR                                 |" -ForegroundColor Red
+        Write-Host "  |                                                              |" -ForegroundColor Red
+        Write-Host "  |             Platform Installation Failed!                   |" -ForegroundColor Red
+        Write-Host "  |                                                              |" -ForegroundColor Red
+        Write-Host "  ================================================================" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Please try the following:" -ForegroundColor Yellow
+        Write-Host "1. Check your internet connection" -ForegroundColor Gray
+        Write-Host "2. Run PowerShell as Administrator" -ForegroundColor Gray
+        Write-Host "3. Temporarily disable firewall/antivirus" -ForegroundColor Gray
+        Write-Host "4. Contact platform support with the error message above" -ForegroundColor Gray
+        Write-Host ""
+        if (-not $Silent) {
+            Read-Host "Press Enter to exit"
+        }
+        exit 1
     }
-    exit 1
 }
 finally {
     # Cleanup temp directory

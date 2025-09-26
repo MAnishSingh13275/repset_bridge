@@ -4,7 +4,22 @@ This guide walks you through installing the Gym Door Bridge as a Windows service
 
 ## 🚀 Quick Start
 
-### Option 1: One-Click Installation (Recommended)
+### Option 1: Enhanced Web Installation (Recommended) ⭐
+
+**One-Click Smart Install:**
+```powershell
+# Run PowerShell as Administrator, then:
+iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
+```
+
+**Enhanced Features:**
+- 🚀 Downloads latest version automatically
+- 🔄 Smart pairing with auto-unpair capability
+- ⚡ Handles "already paired" devices automatically
+- 🛠️ No manual unpair commands needed
+- 📞 Reduces administrator support requests
+
+### Option 2: Local Installation
 
 1. **Download or Build**
 
@@ -28,11 +43,14 @@ That's it! The service will automatically:
 - Install as a Windows service
 - Start running immediately
 
-### Option 2: PowerShell Installation
+### Option 3: PowerShell Installation (Local)
 
 ```powershell
 # Run PowerShell as Administrator
 .\install.ps1
+
+# Enhanced installer with smart pairing
+.\enhanced-bridge-installer.ps1
 
 # With custom options
 .\install.ps1 -InstallPath "C:\MyGymBridge" -Force
@@ -120,17 +138,24 @@ adapter_configs:
 
 ## 🔧 Post-Installation
 
-### 1. Pair with Platform
+### 1. Pair with Platform (Smart Pairing Enabled ⭐)
 
 ```cmd
-gym-door-bridge.exe pair
+gym-door-bridge.exe pair --pair-code YOUR_CODE
 ```
+
+**Smart Pairing Features:**
+- 🔄 Automatically detects if device is already paired
+- 🔧 Runs `unpair --force` if needed
+- ⚡ Retries pairing with current code automatically
+- 🎉 Works seamlessly during reinstallations
 
 This will:
 
 - Register the bridge with your SaaS platform
-- Obtain device credentials
+- Obtain device credentials  
 - Update configuration with platform details
+- Handle existing pairings automatically
 
 ### 2. Verify Installation
 

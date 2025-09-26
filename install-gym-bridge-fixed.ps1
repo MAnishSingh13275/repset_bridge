@@ -291,24 +291,70 @@ try {
         Write-Host ""
     }
 
-    # Handle pairing
-    if ($PairCode) {
-        Write-Host "Pairing device with provided code..." -ForegroundColor Yellow
-        Push-Location $installDir
+    # Enhanced pairing function with auto-unpair capability
+    function Invoke-SmartPairing {
+        param([string]$Code, [string]$InstallDirectory)
+        
+        Push-Location $InstallDirectory
         try {
-            $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $PairCode 2>&1
+            Write-Host "Pairing device with code: $Code" -ForegroundColor Yellow
+            $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $Code 2>&1
+            
             if ($LASTEXITCODE -eq 0) {
                 Write-Host ""
                 Write-Success "Device paired successfully!"
                 Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
+                return $true
+            } elseif ($pairResult -match "already paired|device is already paired") {
+                Write-Host ""
+                Write-Warning "Device is already paired - attempting to unpair and re-pair..."
+                
+                # Attempt to unpair with force flag
+                Write-Info "Running unpair command..."
+                $unpairResult = & ".\gym-door-bridge.exe" unpair --force 2>&1
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "Device unpaired successfully"
+                    Write-Info "Retrying pairing with new code..."
+                    
+                    # Retry pairing
+                    $retryResult = & ".\gym-door-bridge.exe" pair --pair-code $Code 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host ""
+                        Write-Success "Device re-paired successfully!"
+                        Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
+                        return $true
+                    } else {
+                        Write-Host ""
+                        Write-Error "Re-pairing failed after unpair"
+                        Write-Host "Retry output: $retryResult" -ForegroundColor Red
+                        return $false
+                    }
+                } else {
+                    Write-Host ""
+                    Write-Error "Failed to unpair existing device"
+                    Write-Host "Unpair output: $unpairResult" -ForegroundColor Red
+                    Write-Info "You may need to unpair manually from the admin portal"
+                    return $false
+                }
             } else {
                 Write-Host ""
-                Write-Error "Pairing failed. You can try again later."
+                Write-Error "Pairing failed"
                 Write-Host "Pairing output: $pairResult" -ForegroundColor Red
+                return $false
             }
         }
         finally {
             Pop-Location
+        }
+    }
+
+    # Handle pairing with enhanced auto-unpair logic
+    if ($PairCode) {
+        $pairSuccess = Invoke-SmartPairing -Code $PairCode -InstallDirectory $installDir
+        if (-not $pairSuccess) {
+            Write-Warning "Pairing unsuccessful. You can try again later using:"
+            Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
         }
     } elseif (-not $Silent) {
         Write-Host ""
@@ -317,22 +363,10 @@ try {
             $inputCode = Read-Host "Enter your pairing code"
             if ($inputCode.Trim()) {
                 Write-Host ""
-                Write-Host "Pairing device..." -ForegroundColor Yellow
-                Push-Location $installDir
-                try {
-                    $pairResult = & ".\gym-door-bridge.exe" pair --pair-code $inputCode 2>&1
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Host ""
-                        Write-Success "Device paired successfully!"
-                        Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
-                    } else {
-                        Write-Host ""
-                        Write-Error "Pairing failed. You can try again later using:"
-                        Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
-                    }
-                }
-                finally {
-                    Pop-Location
+                $pairSuccess = Invoke-SmartPairing -Code $inputCode.Trim() -InstallDirectory $installDir
+                if (-not $pairSuccess) {
+                    Write-Warning "Pairing unsuccessful. You can try again later using:"
+                    Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
                 }
             }
         }

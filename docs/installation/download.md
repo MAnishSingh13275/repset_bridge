@@ -2,7 +2,23 @@
 
 ## 🚀 Quick Installation for Gym Owners
 
-### Step 1: Download
+### NEW: Enhanced Web Installer ⭐
+
+The fastest and most reliable way to install:
+
+**Run PowerShell as Administrator, then:**
+```powershell
+iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
+```
+
+**Enhanced Features:**
+- ✅ Automatic download of latest version
+- ✅ Smart pairing with auto-unpair capability  
+- ✅ Handles "already paired" devices automatically
+- ✅ No manual unpair commands needed
+- ✅ Reduces administrator support requests
+
+### Step 1: Download (Manual Method)
 Choose one of these options:
 
 **Option A: Download Release Package**

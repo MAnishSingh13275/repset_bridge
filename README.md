@@ -16,11 +16,12 @@ Complete documentation is available in the [`docs/`](docs/) directory:
 
 ### For Gym Owners (Non-Technical)
 
-**🚀 One-Click Web Install:**
+**🚀 One-Click Smart Web Install:**
 ```powershell
 # Run PowerShell as Administrator, then:
 iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
 ```
+⭐ **NEW**: Includes smart pairing with automatic unpair/re-pair capability!
 
 **📦 Download & Install:**
 1. Download: [gym-door-bridge-windows.zip](https://github.com/MAnishSingh13275/repset_bridge/releases/latest)

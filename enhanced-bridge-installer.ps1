@@ -1,6 +1,7 @@
 # ================================================================
-# Gym Door Bridge - One-Click PowerShell Installer  
+# Gym Door Bridge - Enhanced PowerShell Installer with Auto-Unpair  
 # Automatically installs and configures the Gym Door Bridge service
+# Features smart pairing with automatic unpair/re-pair capability
 # ================================================================
 
 param(
@@ -10,7 +11,7 @@ param(
 )
 
 # Set up console
-$Host.UI.RawUI.WindowTitle = "Gym Door Bridge Installer"
+$Host.UI.RawUI.WindowTitle = "Gym Door Bridge Enhanced Installer"
 if (-not $Silent) {
     Clear-Host
 }
@@ -27,15 +28,17 @@ if (-not $Silent) {
     Write-Host ""
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
     Write-Host "  █                                                              █" -ForegroundColor Green  
-    Write-Host "  █              GYM DOOR BRIDGE INSTALLER                      █" -ForegroundColor Green
+    Write-Host "  █         GYM DOOR BRIDGE ENHANCED INSTALLER                  █" -ForegroundColor Green
     Write-Host "  █                                                              █" -ForegroundColor Green
-    Write-Host "  █        Connects your biometric devices to the cloud         █" -ForegroundColor Green
+    Write-Host "  █     Connects your biometric devices to the cloud with       █" -ForegroundColor Green
+    Write-Host "  █           automatic unpair/re-pair capability               █" -ForegroundColor Green
     Write-Host "  █                                                              █" -ForegroundColor Green
     Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Version: 1.0.0" -ForegroundColor Gray
+    Write-Host "  Version: 1.0.1-Enhanced" -ForegroundColor Gray
     Write-Host "  Platform: Windows Service" -ForegroundColor Gray  
     Write-Host "  Auto-Discovery: Enabled" -ForegroundColor Gray
+    Write-Host "  Smart Pairing: Enabled" -ForegroundColor Gray
     Write-Host ""
 }
 
@@ -171,15 +174,15 @@ try {
         New-Item -ItemType Directory -Path $startMenuPath -Force | Out-Null
     }
 
-    # Create management shortcuts
+    # Create management shortcuts with enhanced pairing
     $shortcuts = @(
         @{
             Name = "Check Status"
             Content = "@echo off`ngym-door-bridge.exe service status`npause"
         },
         @{
-            Name = "Pair Device"  
-            Content = "@echo off`nset /p CODE=`"Enter your pairing code: `"`ngym-door-bridge.exe pair --pair-code %CODE%`npause"
+            Name = "Smart Pair Device"  
+            Content = "@echo off`necho This uses the enhanced pairing with auto-unpair capability`nset /p CODE=`"Enter your pairing code: `"`necho.`necho Attempting smart pairing (will auto-unpair if needed)...`ngym-door-bridge.exe pair --pair-code %CODE%`nif %ERRORLEVEL% neq 0 (`n    echo.`n    echo Pairing failed. If device was already paired, trying unpair and re-pair...`n    gym-door-bridge.exe unpair --force`n    if %ERRORLEVEL% equ 0 (`n        echo Device unpaired successfully. Retrying pairing...`n        gym-door-bridge.exe pair --pair-code %CODE%`n        if %ERRORLEVEL% equ 0 (`n            echo Device re-paired successfully!`n        ) else (`n            echo Re-pairing failed. Please check your pairing code.`n        )`n    ) else (`n        echo Unpair failed. You may need to unpair manually from the admin portal.`n    )`n)`npause"
         },
         @{
             Name = "Restart Service"
@@ -196,7 +199,7 @@ try {
         $shortcut.Content | Out-File -FilePath $filePath -Encoding ASCII -Force
     }
 
-    Write-Success "Start menu shortcuts created"
+    Write-Success "Enhanced start menu shortcuts created"
     Write-Host ""
 
     # Installation complete
@@ -209,17 +212,23 @@ try {
     Write-Host "  ✓ Gym Door Bridge service installed and running" -ForegroundColor Green
     Write-Host "  ✓ Auto-discovery completed for biometric devices" -ForegroundColor Green
     Write-Host "  ✓ Service configured to start automatically on boot" -ForegroundColor Green  
-    Write-Host "  ✓ Management shortcuts created in Start Menu" -ForegroundColor Green
+    Write-Host "  ✓ Enhanced management shortcuts created in Start Menu" -ForegroundColor Green
+    Write-Host "  ✓ Smart pairing with auto-unpair capability enabled" -ForegroundColor Green
     Write-Host ""
 
     if (-not $Silent) {
         Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Cyan
-        Write-Host "  █                      NEXT STEPS                             █" -ForegroundColor Cyan
+        Write-Host "  █                      ENHANCED FEATURES                      █" -ForegroundColor Cyan
         Write-Host "  ████████████████████████████████████████████████████████████████" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  ★ SMART PAIRING:" -ForegroundColor Yellow
+        Write-Host "     • Automatically detects if device is already paired" -ForegroundColor Gray
+        Write-Host "     • Runs unpair --force and re-pairs with current code" -ForegroundColor Gray
+        Write-Host "     • Eliminates manual intervention for paired devices" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  1. PAIR YOUR DEVICE:" -ForegroundColor White
         Write-Host "     • Get pairing code from your admin portal" -ForegroundColor Gray
-        Write-Host "     • Use Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Gray
+        Write-Host "     • Use Start Menu > Gym Door Bridge > Smart Pair Device" -ForegroundColor Gray
         Write-Host "     • Or run: gym-door-bridge pair --pair-code YOUR_CODE" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  2. VERIFY SETUP:" -ForegroundColor White  
@@ -238,7 +247,7 @@ try {
     function Invoke-SmartPairing {
         param([string]$Code, [string]$ExePath)
         
-        Write-Host "Pairing device with code: $Code" -ForegroundColor Yellow
+        Write-Host "🔄 Smart Pairing: Attempting to pair device with code: $Code" -ForegroundColor Yellow
         $pairResult = & $ExePath pair --pair-code $Code 2>&1
         
         if ($LASTEXITCODE -eq 0) {
@@ -248,27 +257,28 @@ try {
             return $true
         } elseif ($pairResult -match "already paired|device is already paired") {
             Write-Host ""
-            Write-Warning "Device is already paired - attempting to unpair and re-pair..."
+            Write-Warning "Device is already paired - initiating smart re-pairing process..."
             
             # Attempt to unpair with force flag
-            Write-Info "Running unpair command..."
+            Write-Info "🔧 Running unpair command with --force flag..."
             $unpairResult = & $ExePath unpair --force 2>&1
             
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Device unpaired successfully"
-                Write-Info "Retrying pairing with new code..."
+                Write-Info "🔄 Retrying pairing with current code..."
                 
                 # Retry pairing
                 $retryResult = & $ExePath pair --pair-code $Code 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host ""
-                    Write-Success "Device re-paired successfully!"
-                    Write-Host "Your gym door bridge is now fully operational!" -ForegroundColor Green
+                    Write-Success "🎉 Device re-paired successfully!"
+                    Write-Host "Your gym door bridge is now fully operational with the latest pairing code!" -ForegroundColor Green
                     return $true
                 } else {
                     Write-Host ""
-                    Write-Error "Re-pairing failed after unpair"
+                    Write-Error "Re-pairing failed after successful unpair"
                     Write-Host "Retry output: $retryResult" -ForegroundColor Red
+                    Write-Info "The device was unpaired but re-pairing failed. Please check your pairing code."
                     return $false
                 }
             } else {
@@ -276,42 +286,48 @@ try {
                 Write-Error "Failed to unpair existing device"
                 Write-Host "Unpair output: $unpairResult" -ForegroundColor Red
                 Write-Info "You may need to unpair manually from the admin portal"
+                Write-Info "Or contact support if the issue persists"
                 return $false
             }
         } else {
             Write-Host ""
-            Write-Error "Pairing failed"
+            Write-Error "Pairing failed for unknown reason"
             Write-Host "Pairing output: $pairResult" -ForegroundColor Red
+            Write-Info "Please verify your pairing code and network connectivity"
             return $false
         }
     }
 
     # Handle pairing with enhanced auto-unpair logic
     if ($PairCode) {
+        Write-Host ""
+        Write-Host "🚀 Initiating smart pairing with provided code..." -ForegroundColor Cyan
         $pairSuccess = Invoke-SmartPairing -Code $PairCode -ExePath ".\gym-door-bridge.exe"
         if (-not $pairSuccess) {
-            Write-Warning "Pairing unsuccessful. You can try again later using:"
+            Write-Warning "Smart pairing unsuccessful. You can try again later using:"
             Write-Host "gym-door-bridge.exe pair --pair-code YOUR_CODE" -ForegroundColor Cyan
+            Write-Host "Or use the enhanced 'Smart Pair Device' shortcut from the Start Menu" -ForegroundColor Cyan
         }
     } elseif (-not $Silent) {
         Write-Host ""
-        $pairNow = Read-Host "Would you like to pair your device now? (Y/n)"
+        $pairNow = Read-Host "🔗 Would you like to pair your device now using smart pairing? (Y/n)"
         if ($pairNow.ToLower() -ne "n") {
             $inputCode = Read-Host "Enter your pairing code"
             if ($inputCode.Trim()) {
                 Write-Host ""
                 $pairSuccess = Invoke-SmartPairing -Code $inputCode.Trim() -ExePath ".\gym-door-bridge.exe"
                 if (-not $pairSuccess) {
-                    Write-Warning "Pairing unsuccessful. You can try again later using:"
-                    Write-Host "Start Menu > Gym Door Bridge > Pair Device" -ForegroundColor Cyan
+                    Write-Warning "Smart pairing unsuccessful. You can try again later using:"
+                    Write-Host "Start Menu > Gym Door Bridge > Smart Pair Device" -ForegroundColor Cyan
                 }
             }
         }
     }
 
     Write-Host ""
-    Write-Host "Installation process completed!" -ForegroundColor Green
+    Write-Host "✅ Enhanced installation process completed!" -ForegroundColor Green
     if (-not $Silent) {
+        Write-Host "Your gym door bridge now includes smart pairing capabilities." -ForegroundColor Gray
         Write-Host "You can close this window now." -ForegroundColor Gray
         Write-Host ""
         Read-Host "Press Enter to exit"
