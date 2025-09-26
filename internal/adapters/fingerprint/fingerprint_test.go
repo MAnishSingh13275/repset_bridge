@@ -15,12 +15,12 @@ func TestFingerprintAdapter_Initialize(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		config      AdapterConfig
+	config      types.AdapterConfig
 		expectError bool
 	}{
 		{
 			name: "valid configuration",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:    "fingerprint",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -33,7 +33,7 @@ func TestFingerprintAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "missing devicePath",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:     "fingerprint",
 				Enabled:  true,
 				Settings: map[string]interface{}{},
@@ -42,7 +42,7 @@ func TestFingerprintAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "custom settings",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:    "fingerprint",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -67,7 +67,7 @@ func TestFingerprintAdapter_Initialize(t *testing.T) {
 
 			if !tt.expectError {
 				status := adapter.GetStatus()
-				if status.Status != StatusActive {
+			if status.Status != types.StatusActive {
 					t.Errorf("expected status 'active', got '%s'", status.Status)
 				}
 			}
@@ -79,7 +79,7 @@ func TestFingerprintAdapter_StartStopListening(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewFingerprintAdapter(logger)
 
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "fingerprint",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -119,7 +119,7 @@ func TestFingerprintAdapter_UnlockDoor(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewFingerprintAdapter(logger)
 
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "fingerprint",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -149,7 +149,7 @@ func TestFingerprintAdapter_Status(t *testing.T) {
 	if status.Name != "fingerprint" {
 		t.Errorf("expected name 'fingerprint', got '%s'", status.Name)
 	}
-	if status.Status != StatusDisabled {
+	if status.Status != types.StatusDisabled {
 		t.Errorf("expected status 'disabled', got '%s'", status.Status)
 	}
 

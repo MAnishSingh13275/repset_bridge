@@ -6,7 +6,7 @@ param(
     [string]$PairCode,
     
     [Parameter(Mandatory=$false)]
-    [string]$ServerURL = "https://api.yourdomain.com",
+    [string]$ServerURL = "https://api.repset.onezy.in",
     
     [Parameter(Mandatory=$false)]
     [string]$InstallDir = "$env:ProgramFiles\GymDoorBridge",
@@ -18,7 +18,7 @@ param(
     [string]$Version = "latest",
     
     [Parameter(Mandatory=$false)]
-    [string]$CDNBaseURL = "https://cdn.yourdomain.com/gym-door-bridge"
+    [string]$CDNBaseURL = "https://cdn.repset.onezy.in/gym-door-bridge"
 )
 
 # Script configuration

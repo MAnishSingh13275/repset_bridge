@@ -1,7 +1,6 @@
 package adapters
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -15,7 +14,7 @@ func TestAdapterManager_LoadAdapters(t *testing.T) {
 	manager := NewAdapterManager(logger)
 	defer manager.Shutdown()
 
-	configs := []AdapterConfig{
+	configs := []types.AdapterConfig{
 		{
 			Name:    "simulator",
 			Enabled: true,
@@ -67,7 +66,7 @@ func TestAdapterManager_StartStopAll(t *testing.T) {
 	manager := NewAdapterManager(logger)
 	defer manager.Shutdown()
 
-	configs := []AdapterConfig{
+	configs := []types.AdapterConfig{
 		{
 			Name:    "simulator",
 			Enabled: true,
@@ -100,7 +99,7 @@ func TestAdapterManager_StartStopAll(t *testing.T) {
 		t.Errorf("expected 1 adapter status, got %d", len(status))
 	}
 
-	if status["simulator"].Status != StatusActive {
+	if status["simulator"].Status != types.StatusActive {
 		t.Errorf("expected simulator status 'active', got '%s'", status["simulator"].Status)
 	}
 
@@ -122,7 +121,7 @@ func TestAdapterManager_GetAdapter(t *testing.T) {
 	manager := NewAdapterManager(logger)
 	defer manager.Shutdown()
 
-	configs := []AdapterConfig{
+	configs := []types.AdapterConfig{
 		{
 			Name:     "simulator",
 			Enabled:  true,
@@ -156,7 +155,7 @@ func TestAdapterManager_UnlockDoor(t *testing.T) {
 	manager := NewAdapterManager(logger)
 	defer manager.Shutdown()
 
-	configs := []AdapterConfig{
+	configs := []types.AdapterConfig{
 		{
 			Name:     "simulator",
 			Enabled:  true,
@@ -200,7 +199,7 @@ func TestAdapterManager_ReloadAdapter(t *testing.T) {
 	defer manager.Shutdown()
 
 	// Load initial adapter
-	initialConfig := AdapterConfig{
+	initialConfig := types.AdapterConfig{
 		Name:    "simulator",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -208,13 +207,13 @@ func TestAdapterManager_ReloadAdapter(t *testing.T) {
 		},
 	}
 
-	err := manager.LoadAdapters([]AdapterConfig{initialConfig})
+	err := manager.LoadAdapters([]types.AdapterConfig{initialConfig})
 	if err != nil {
 		t.Fatalf("failed to load initial adapter: %v", err)
 	}
 
 	// Reload with new configuration
-	newConfig := AdapterConfig{
+	newConfig := types.AdapterConfig{
 		Name:    "simulator",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -247,7 +246,7 @@ func TestAdapterManager_EventCallback(t *testing.T) {
 		receivedEvents = append(receivedEvents, event)
 	})
 
-	configs := []AdapterConfig{
+	configs := []types.AdapterConfig{
 		{
 			Name:    "simulator",
 			Enabled: true,
@@ -297,7 +296,7 @@ func TestAdapterManager_UnknownAdapterType(t *testing.T) {
 	manager := NewAdapterManager(logger)
 	defer manager.Shutdown()
 
-	configs := []AdapterConfig{
+	configs := []types.AdapterConfig{
 		{
 			Name:     "unknown_adapter",
 			Enabled:  true,

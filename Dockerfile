@@ -86,9 +86,9 @@ ENTRYPOINT ["/app/gym-door-bridge"]
 CMD ["--config", "/app/config/config.yaml", "--log-level", "info"]
 
 # Labels
-LABEL maintainer="Your Team <team@yourdomain.com>"
+LABEL maintainer="Repset Team <team@repset.onezy.in>"
 LABEL description="Gym Door Access Bridge - Connect door hardware to SaaS platform"
 LABEL version="${VERSION}"
-LABEL org.opencontainers.image.source="https://github.com/yourdomain/gym-door-bridge"
-LABEL org.opencontainers.image.documentation="https://docs.yourdomain.com/gym-door-bridge"
+LABEL org.opencontainers.image.source="https://github.com/MAnishSingh13275/repset_bridge"
+LABEL org.opencontainers.image.documentation="https://docs.repset.onezy.in/gym-door-bridge"
 LABEL org.opencontainers.image.licenses="MIT"

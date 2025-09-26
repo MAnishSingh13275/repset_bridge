@@ -32,7 +32,7 @@ type CloudMetricsReporterConfig struct {
 // DefaultCloudMetricsReporterConfig returns default configuration
 func DefaultCloudMetricsReporterConfig() CloudMetricsReporterConfig {
 	return CloudMetricsReporterConfig{
-		BaseURL:       "https://api.yourdomain.com",
+		BaseURL:       "https://api.repset.onezy.in",
 		Timeout:       30 * time.Second,
 		RetryAttempts: 3,
 		RetryDelay:    5 * time.Second,

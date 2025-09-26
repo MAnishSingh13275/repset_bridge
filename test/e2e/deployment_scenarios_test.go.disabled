@@ -27,7 +27,6 @@ import (
 	"gym-door-bridge/internal/health"
 	"gym-door-bridge/internal/processor"
 	"gym-door-bridge/internal/queue"
-	"gym-door-bridge/internal/service"
 	"gym-door-bridge/internal/tier"
 	"gym-door-bridge/internal/updater"
 )
@@ -192,7 +191,7 @@ performance:
 	dbPath := filepath.Join(installDir, "bridge.db")
 	s.Assert().FileExists(dbPath, "Database should be created")
 
-	db, err := database.NewConnection(dbPath)
+	db, err := database.NewDB(dbPath)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -268,7 +267,7 @@ func (s *DeploymentScenariosTestSuite) TestOfflineResilienceScenario() {
 	cfg.Device.ID = "offline-test-device"
 	cfg.Device.Key = "offline-test-key"
 
-	db, err := database.NewConnection(cfg.Database.Path)
+	db, err := database.NewDB(cfg.Database.Path)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -455,7 +454,7 @@ func (s *DeploymentScenariosTestSuite) TestFailureRecoveryScenario() {
 	dbPath := cfg.Database.Path
 	
 	// Create and initialize database
-	db, err := database.NewConnection(dbPath)
+	db, err := database.NewDB(dbPath)
 	s.Require().NoError(err)
 	
 	err = database.RunMigrations(db)
@@ -467,7 +466,7 @@ func (s *DeploymentScenariosTestSuite) TestFailureRecoveryScenario() {
 	s.Require().NoError(err)
 
 	// Test recovery
-	db, err = database.NewConnection(dbPath)
+	db, err = database.NewDB(dbPath)
 	if err != nil {
 		// Expected - corrupted database
 		s.T().Logf("Database corruption detected: %v", err)
@@ -476,7 +475,7 @@ func (s *DeploymentScenariosTestSuite) TestFailureRecoveryScenario() {
 		os.Remove(dbPath)
 		
 		// Recreate database
-		db, err = database.NewConnection(dbPath)
+		db, err = database.NewDB(dbPath)
 		s.Require().NoError(err)
 		
 		err = database.RunMigrations(db)

@@ -185,7 +185,7 @@ jobs:
             /p $env:WINDOWS_CERT_PASSWORD `
             /n "${{ env.PROJECT_NAME }}" `
             /d "Gym Door Access Bridge" `
-            /du "https://yourdomain.com" `
+            /du "https://repset.onezy.in" `
             /t "http://timestamp.digicert.com" `
             ${{ matrix.artifact_name }}
           
@@ -209,7 +209,7 @@ jobs:
           if [ -n "$MACOS_NOTARY_USER" ] && [ -n "$MACOS_NOTARY_PASSWORD" ]; then
             zip ${{ matrix.artifact_name }}.zip ${{ matrix.artifact_name }}
             xcrun altool --notarize-app \
-              --primary-bundle-id "com.yourdomain.${{ env.PROJECT_NAME }}" \
+              --primary-bundle-id "com.repset.onezy.${{ env.PROJECT_NAME }}" \
               --username "$MACOS_NOTARY_USER" \
               --password "$MACOS_NOTARY_PASSWORD" \
               --file ${{ matrix.artifact_name }}.zip
@@ -436,7 +436,7 @@ jobs:
         # Deploy binaries and manifest to CDN
         # This would typically use rsync, aws s3, or similar
         echo "Deploying to CDN..."
-        # rsync -avz --delete release/ user@cdn.yourdomain.com:/var/www/gym-door-bridge/
+        # rsync -avz --delete release/ user@cdn.repset.onezy.in:/var/www/gym-door-bridge/
         # aws s3 sync release/ s3://your-bucket/gym-door-bridge/ --delete
 
   notify:

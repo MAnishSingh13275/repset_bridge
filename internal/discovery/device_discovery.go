@@ -228,7 +228,7 @@ func (d *DeviceDiscovery) incrementIP(ip net.IP) {
 
 // probeDevice attempts to identify a biometric device at the given IP:port
 func (d *DeviceDiscovery) probeDevice(ip string, port int) *DeviceInfo {
-	address := fmt.Sprintf("%s:%d", ip, port)
+	address := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
 	
 	// Try to connect with timeout
 	conn, err := net.DialTimeout("tcp", address, 2*time.Second)

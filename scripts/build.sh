@@ -80,7 +80,7 @@ sign_windows() {
         -pkcs12 "${WINDOWS_CERT_PATH}" \
         -pass "${WINDOWS_CERT_PASSWORD}" \
         -n "${PROJECT_NAME}" \
-        -i "https://yourdomain.com" \
+        -i "https://repset.onezy.in" \
         -t "http://timestamp.digicert.com" \
         -in "${binary}" \
         -out "${binary}.signed"
@@ -116,7 +116,7 @@ sign_macos() {
         
         # Submit for notarization
         xcrun altool --notarize-app \
-            --primary-bundle-id "com.yourdomain.${PROJECT_NAME}" \
+            --primary-bundle-id "com.repset.onezy.${PROJECT_NAME}" \
             --username "${MACOS_NOTARY_USER}" \
             --password "${MACOS_NOTARY_PASSWORD}" \
             --file "${zip_name}"

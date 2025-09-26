@@ -68,6 +68,21 @@ func (m *MockQueueManager) IsQueueFull(ctx context.Context) (bool, error) {
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockQueueManager) ClearEvents(ctx context.Context, criteria queue.EventClearCriteria) (int64, error) {
+	args := m.Called(ctx, criteria)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockQueueManager) QueryEvents(ctx context.Context, filter queue.EventQueryFilter) ([]queue.QueuedEvent, int64, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).([]queue.QueuedEvent), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockQueueManager) GetEventStats(ctx context.Context) (queue.EventStatistics, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(queue.EventStatistics), args.Error(1)
+}
+
 func (m *MockQueueManager) Close(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)

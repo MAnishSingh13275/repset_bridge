@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,12 +19,12 @@ func TestWebhookAdapter_Initialize(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		config      AdapterConfig
+		config      types.AdapterConfig
 		expectError bool
 	}{
 		{
 			name: "valid configuration",
-			config: AdapterConfig{
+			config: types.AdapterConfig{
 				Name:    "webhook",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -38,7 +37,7 @@ func TestWebhookAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "invalid port",
-			config: AdapterConfig{
+			config: types.AdapterConfig{
 				Name:    "webhook",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -49,7 +48,7 @@ func TestWebhookAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "default values",
-			config: AdapterConfig{
+			config: types.AdapterConfig{
 				Name:     "webhook",
 				Enabled:  true,
 				Settings: map[string]interface{}{},
@@ -75,7 +74,7 @@ func TestWebhookAdapter_StartStopListening(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewWebhookAdapter(logger)
 
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "webhook",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -169,7 +168,7 @@ func TestWebhookAdapter_Authentication(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewWebhookAdapter(logger)
 
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "webhook",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -233,7 +232,7 @@ func TestWebhookAdapter_InvalidPayloads(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewWebhookAdapter(logger)
 
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "webhook",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -304,7 +303,7 @@ func TestWebhookAdapter_HealthEndpoint(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewWebhookAdapter(logger)
 
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "webhook",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -382,7 +381,7 @@ func TestWebhookAdapter_Status(t *testing.T) {
 	}
 
 	// Initialize adapter
-	config := AdapterConfig{
+	config := types.AdapterConfig{
 		Name:     "webhook",
 		Enabled:  true,
 		Settings: map[string]interface{}{},

@@ -15,12 +15,12 @@ func TestRFIDAdapter_Initialize(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		config      AdapterConfig
+	config      types.AdapterConfig
 		expectError bool
 	}{
 		{
 			name: "valid configuration",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:    "rfid",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -34,7 +34,7 @@ func TestRFIDAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "missing devicePath",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:     "rfid",
 				Enabled:  true,
 				Settings: map[string]interface{}{},
@@ -43,7 +43,7 @@ func TestRFIDAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "invalid frequency",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:    "rfid",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -55,7 +55,7 @@ func TestRFIDAdapter_Initialize(t *testing.T) {
 		},
 		{
 			name: "LF RFID configuration",
-			config: AdapterConfig{
+		config: types.AdapterConfig{
 				Name:    "rfid",
 				Enabled: true,
 				Settings: map[string]interface{}{
@@ -81,7 +81,7 @@ func TestRFIDAdapter_Initialize(t *testing.T) {
 
 			if !tt.expectError {
 				status := adapter.GetStatus()
-				if status.Status != adapters.StatusActive {
+			if status.Status != types.StatusActive {
 					t.Errorf("expected status 'active', got '%s'", status.Status)
 				}
 			}
@@ -93,7 +93,7 @@ func TestRFIDAdapter_StartStopListening(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewRFIDAdapter(logger)
 
-	config := adapters.AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "rfid",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -134,7 +134,7 @@ func TestRFIDAdapter_UnlockDoor(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	adapter := NewRFIDAdapter(logger)
 
-	config := adapters.AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "rfid",
 		Enabled: true,
 		Settings: map[string]interface{}{
@@ -165,7 +165,7 @@ func TestRFIDAdapter_Status(t *testing.T) {
 	if status.Name != "rfid" {
 		t.Errorf("expected name 'rfid', got '%s'", status.Name)
 	}
-	if status.Status != adapters.StatusDisabled {
+	if status.Status != types.StatusDisabled {
 		t.Errorf("expected status 'disabled', got '%s'", status.Status)
 	}
 
@@ -185,7 +185,7 @@ func TestRFIDAdapter_ProcessRawCardData(t *testing.T) {
 	adapter := NewRFIDAdapter(logger)
 
 	// Initialize with frequency setting
-	config := adapters.AdapterConfig{
+	config := types.AdapterConfig{
 		Name:    "rfid",
 		Enabled: true,
 		Settings: map[string]interface{}{

@@ -35,7 +35,7 @@ type HardwareToCloudTestSuite struct {
 	cfg        *config.Config
 	
 	// Components under test
-	adapterManager *adapters.Manager
+	adapterManager *adapters.AdapterManager
 	eventProcessor *processor.EventProcessor
 	queueManager   *queue.Manager
 	apiClient      *client.APIClient

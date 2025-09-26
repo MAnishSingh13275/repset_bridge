@@ -131,7 +131,7 @@ func abs(x int64) int64 {
 
 // TestValidHMACAuthentication tests successful HMAC authentication
 func (s *AuthenticationSecurityTestSuite) TestValidHMACAuthentication() {
-	authManager, err := auth.NewManager(s.validDeviceID, s.validDeviceKey)
+	authManager, err := auth.NewAuthManager(s.validDeviceID, s.validDeviceKey)
 	s.Require().NoError(err)
 
 	cfg := &config.APIConfig{
@@ -162,7 +162,7 @@ func (s *AuthenticationSecurityTestSuite) TestValidHMACAuthentication() {
 // TestInvalidDeviceID tests rejection of invalid device IDs
 func (s *AuthenticationSecurityTestSuite) TestInvalidDeviceID() {
 	// Use wrong device ID
-	authManager, err := auth.NewManager("wrong-device-id", s.validDeviceKey)
+	authManager, err := auth.NewAuthManager("wrong-device-id", s.validDeviceKey)
 	s.Require().NoError(err)
 
 	cfg := &config.APIConfig{
@@ -192,7 +192,7 @@ func (s *AuthenticationSecurityTestSuite) TestInvalidDeviceID() {
 // TestInvalidHMACKey tests rejection of invalid HMAC keys
 func (s *AuthenticationSecurityTestSuite) TestInvalidHMACKey() {
 	// Use wrong HMAC key
-	authManager, err := auth.NewManager(s.validDeviceID, "wrong-hmac-key")
+	authManager, err := auth.NewAuthManager(s.validDeviceID, "wrong-hmac-key")
 	s.Require().NoError(err)
 
 	cfg := &config.APIConfig{
@@ -221,7 +221,7 @@ func (s *AuthenticationSecurityTestSuite) TestInvalidHMACKey() {
 
 // TestTimestampValidation tests timestamp-based replay attack protection
 func (s *AuthenticationSecurityTestSuite) TestTimestampValidation() {
-	authManager, err := auth.NewManager(s.validDeviceID, s.validDeviceKey)
+	authManager, err := auth.NewAuthManager(s.validDeviceID, s.validDeviceKey)
 	s.Require().NoError(err)
 
 	// Create request with old timestamp (simulate replay attack)
@@ -295,7 +295,7 @@ func (s *AuthenticationSecurityTestSuite) TestPairCodeSecurity() {
 func (s *AuthenticationSecurityTestSuite) TestHMACKeyRotation() {
 	// Initial authentication with old key
 	oldKey := "old-hmac-key-123"
-	authManager, err := auth.NewManager(s.validDeviceID, oldKey)
+	authManager, err := auth.NewAuthManager(s.validDeviceID, oldKey)
 	s.Require().NoError(err)
 
 	// Rotate to new key
@@ -329,7 +329,7 @@ func (s *AuthenticationSecurityTestSuite) TestHMACKeyRotation() {
 
 // TestConcurrentAuthenticationRequests tests authentication under concurrent load
 func (s *AuthenticationSecurityTestSuite) TestConcurrentAuthenticationRequests() {
-	authManager, err := auth.NewManager(s.validDeviceID, s.validDeviceKey)
+	authManager, err := auth.NewAuthManager(s.validDeviceID, s.validDeviceKey)
 	s.Require().NoError(err)
 
 	cfg := &config.APIConfig{

@@ -18,15 +18,15 @@ CHANGELOG=${CHANGELOG:-"See release notes for details"}
 MIN_VERSION=${MIN_VERSION:-"1.0.0"}
 ROLLOUT_PERCENTAGE=${ROLLOUT_PERCENTAGE:-100}
 CRITICAL=${CRITICAL:-false}
-CDN_BASE_URL=${CDN_BASE_URL:-"https://cdn.yourdomain.com/gym-door-bridge"}
+CDN_BASE_URL=${CDN_BASE_URL:-"https://cdn.repset.onezy.in/gym-door-bridge"}
 BREAKING_CHANGES=${BREAKING_CHANGES:-false}
 ROLLBACK_ENABLED=${ROLLBACK_ENABLED:-true}
 PREVIOUS_VERSION=${PREVIOUS_VERSION:-""}
 BUILD_NUMBER=${BUILD_NUMBER:-$(date +%Y%m%d%H%M%S)}
 COMMIT_HASH=${COMMIT_HASH:-$(git rev-parse HEAD 2>/dev/null || echo "unknown")}
 BUILD_TIME=${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
-RELEASE_NOTES_URL=${RELEASE_NOTES_URL:-"https://docs.yourdomain.com/releases/${VERSION}"}
-DOCUMENTATION_URL=${DOCUMENTATION_URL:-"https://docs.yourdomain.com/gym-door-bridge"}
+RELEASE_NOTES_URL=${RELEASE_NOTES_URL:-"https://docs.repset.onezy.in/releases/${VERSION}"}
+DOCUMENTATION_URL=${DOCUMENTATION_URL:-"https://docs.repset.onezy.in/gym-door-bridge"}
 
 # Feature arrays (JSON format)
 NEW_FEATURES=${NEW_FEATURES:-'[]'}

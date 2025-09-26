@@ -7,12 +7,12 @@ set -euo pipefail
 
 # Script configuration
 SCRIPT_NAME="$(basename "$0")"
-SERVICE_NAME="com.yourdomain.gym-door-bridge"
+SERVICE_NAME="com.repset.onezy.gym-door-bridge"
 EXECUTABLE_NAME="gym-door-bridge"
-DEFAULT_SERVER_URL="https://api.yourdomain.com"
+DEFAULT_SERVER_URL="https://api.repset.onezy.in"
 DEFAULT_INSTALL_DIR="/usr/local/bin"
 DEFAULT_CONFIG_DIR="/usr/local/etc/gym-door-bridge"
-DEFAULT_CDN_BASE_URL="https://cdn.yourdomain.com/gym-door-bridge"
+DEFAULT_CDN_BASE_URL="https://cdn.repset.onezy.in/gym-door-bridge"
 DEFAULT_VERSION="latest"
 
 # Command line arguments

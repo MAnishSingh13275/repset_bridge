@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"gym-door-bridge/internal/adapters"
 	"gym-door-bridge/internal/config"
 )
 
@@ -36,6 +37,6 @@ func TestNewDoorController(t *testing.T) {
 // Simple mock registry for basic testing
 type mockRegistry struct{}
 
-func (m *mockRegistry) GetAllAdapters() []interface{} { return nil }
-func (m *mockRegistry) GetAdapter(name string) (interface{}, error) { return nil, nil }
-func (m *mockRegistry) GetActiveAdapters() []interface{} { return nil }
+func (m *mockRegistry) GetAllAdapters() []adapters.HardwareAdapter { return nil }
+func (m *mockRegistry) GetAdapter(name string) (adapters.HardwareAdapter, error) { return nil, nil }
+func (m *mockRegistry) GetActiveAdapters() []adapters.HardwareAdapter { return nil }

@@ -100,7 +100,7 @@ func (s *PerformanceTierTestSuite) TestFullTierPerformance() {
 func (s *PerformanceTierTestSuite) TestQueueCapacityLimits() {
 	cfg := s.createTierConfig("lite", 100) // Small queue for testing
 	
-	db, err := database.NewConnection(filepath.Join(s.tempDir, "capacity_test.db"))
+	db, err := database.NewDB(filepath.Join(s.tempDir, "capacity_test.db"))
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -159,7 +159,7 @@ func (s *PerformanceTierTestSuite) TestQueueCapacityLimits() {
 func (s *PerformanceTierTestSuite) TestConcurrentEventProcessing() {
 	cfg := s.createTierConfig("normal", 5000)
 	
-	db, err := database.NewConnection(filepath.Join(s.tempDir, "concurrent_test.db"))
+	db, err := database.NewDB(filepath.Join(s.tempDir, "concurrent_test.db"))
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -297,7 +297,7 @@ func (s *PerformanceTierTestSuite) createTierConfig(tierName string, queueSize i
 
 func (s *PerformanceTierTestSuite) runLoadTest(cfg *config.Config, params LoadTestParams) LoadTestResults {
 	// Setup database
-	db, err := database.NewConnection(cfg.Database.Path)
+	db, err := database.NewDB(cfg.Database.Path)
 	s.Require().NoError(err)
 	defer db.Close()
 

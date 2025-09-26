@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"gym-door-bridge/internal/config"
@@ -177,7 +176,15 @@ func (ac *AutoConfig) hasConfigChanged(currentConfig *config.Config, newAdapterC
 func (ac *AutoConfig) updateConfiguration(currentConfig *config.Config, newAdapterConfig map[string]interface{}) error {
 	// Update adapter configuration
 	currentConfig.EnabledAdapters = newAdapterConfig["enabled_adapters"].([]string)
-	currentConfig.AdapterConfigs = newAdapterConfig["adapter_configs"].(map[string]interface{})
+	// Convert adapter configs to the correct type
+	adapterConfigsRaw := newAdapterConfig["adapter_configs"].(map[string]interface{})
+	adapterConfigs := make(map[string]map[string]interface{})
+	for name, config := range adapterConfigsRaw {
+		if configMap, ok := config.(map[string]interface{}); ok {
+			adapterConfigs[name] = configMap
+		}
+	}
+	currentConfig.AdapterConfigs = adapterConfigs
 
 	// Create backup of current config
 	backupPath := ac.configPath + ".backup." + time.Now().Format("20060102-150405")
@@ -223,8 +230,8 @@ func (ac *AutoConfig) getDefaultConfig() *config.Config {
 		},
 		
 		EnabledAdapters: []string{"simulator"},
-		AdapterConfigs: map[string]interface{}{
-			"simulator": map[string]interface{}{
+		AdapterConfigs: map[string]map[string]interface{}{
+			"simulator": {
 				"device_type":   "simulator",
 				"connection":    "memory",
 				"device_config": map[string]string{},

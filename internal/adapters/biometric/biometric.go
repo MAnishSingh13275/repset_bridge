@@ -1,6 +1,7 @@
 package biometric
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -363,7 +364,7 @@ func (pc *PlatformClient) makeRequest(method, url string, payload interface{}, r
 		}
 	}
 
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"gym-door-bridge/internal/adapters"
 	"gym-door-bridge/internal/queue"
 	"gym-door-bridge/internal/tier"
 	"gym-door-bridge/internal/types"
@@ -23,14 +22,14 @@ import (
 
 type MockHardwareAdapter struct {
 	name   string
-	status adapters.AdapterStatus
+	status types.AdapterStatus
 }
 
 func (m *MockHardwareAdapter) Name() string {
 	return m.name
 }
 
-func (m *MockHardwareAdapter) Initialize(ctx context.Context, config adapters.AdapterConfig) error {
+func (m *MockHardwareAdapter) Initialize(ctx context.Context, config types.AdapterConfig) error {
 	return nil
 }
 
@@ -46,15 +45,15 @@ func (m *MockHardwareAdapter) UnlockDoor(ctx context.Context, durationMs int) er
 	return nil
 }
 
-func (m *MockHardwareAdapter) GetStatus() adapters.AdapterStatus {
+func (m *MockHardwareAdapter) GetStatus() types.AdapterStatus {
 	return m.status
 }
 
-func (m *MockHardwareAdapter) OnEvent(callback func(event types.RawHardwareEvent)) {
+func (m *MockHardwareAdapter) OnEvent(callback types.EventCallback) {
 }
 
 func (m *MockHardwareAdapter) IsHealthy() bool {
-	return m.status.Status == adapters.StatusActive
+	return m.status.Status == types.StatusActive
 }
 
 func TestHealthMonitor_GetCurrentHealth(t *testing.T) {
@@ -75,9 +74,9 @@ func TestHealthMonitor_GetCurrentHealth(t *testing.T) {
 	adapterRegistry := NewSimpleAdapterRegistry()
 	adapter := &MockHardwareAdapter{
 		name: "test-adapter",
-		status: adapters.AdapterStatus{
+		status: types.AdapterStatus{
 			Name:      "test-adapter",
-			Status:    adapters.StatusActive,
+			Status:    types.StatusActive,
 			UpdatedAt: time.Now(),
 		},
 	}
@@ -116,7 +115,7 @@ func TestHealthMonitor_GetCurrentHealth(t *testing.T) {
 	assert.Equal(t, "test-device", health.DeviceID)
 	assert.Len(t, health.AdapterStatus, 1)
 	assert.Equal(t, "test-adapter", health.AdapterStatus[0].Name)
-	assert.Equal(t, adapters.StatusActive, health.AdapterStatus[0].Status)
+	assert.Equal(t, types.StatusActive, health.AdapterStatus[0].Status)
 	
 	mockQueue.AssertExpectations(t)
 }
@@ -125,15 +124,15 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 	tests := []struct {
 		name            string
 		queueDepth      int
-		adapterStatuses []adapters.AdapterStatus
+		adapterStatuses []types.AdapterStatus
 		resources       tier.SystemResources
 		expectedStatus  HealthStatus
 	}{
 		{
 			name:       "healthy system",
 			queueDepth: 10,
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusActive},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusActive},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    25.0,
@@ -145,8 +144,8 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 		{
 			name:       "degraded - high queue depth",
 			queueDepth: 6000, // More than half of normal tier max (10000)
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusActive},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusActive},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    25.0,
@@ -158,9 +157,9 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 		{
 			name:       "degraded - adapter error",
 			queueDepth: 10,
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusActive},
-				{Name: "adapter2", Status: adapters.StatusError},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusActive},
+				{Name: "adapter2", Status: types.StatusError},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    25.0,
@@ -172,8 +171,8 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 		{
 			name:       "degraded - high resource usage",
 			queueDepth: 10,
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusActive},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusActive},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    85.0, // Above 80% threshold
@@ -185,8 +184,8 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 		{
 			name:       "unhealthy - queue depth error",
 			queueDepth: -1, // Error condition
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusActive},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusActive},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    25.0,
@@ -198,9 +197,9 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 		{
 			name:       "unhealthy - all adapters error",
 			queueDepth: 10,
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusError},
-				{Name: "adapter2", Status: adapters.StatusError},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusError},
+				{Name: "adapter2", Status: types.StatusError},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    25.0,
@@ -212,8 +211,8 @@ func TestHealthMonitor_DetermineOverallHealth(t *testing.T) {
 		{
 			name:       "unhealthy - critical resource usage",
 			queueDepth: 10,
-			adapterStatuses: []adapters.AdapterStatus{
-				{Name: "adapter1", Status: adapters.StatusActive},
+			adapterStatuses: []types.AdapterStatus{
+				{Name: "adapter1", Status: types.StatusActive},
 			},
 			resources: tier.SystemResources{
 				CPUUsage:    96.0, // Above 95% threshold
@@ -346,9 +345,9 @@ func TestSimpleAdapterRegistry(t *testing.T) {
 	// Test registering adapter
 	adapter := &MockHardwareAdapter{
 		name: "test-adapter",
-		status: adapters.AdapterStatus{
+		status: types.AdapterStatus{
 			Name:   "test-adapter",
-			Status: adapters.StatusActive,
+			Status: types.StatusActive,
 		},
 	}
 	
@@ -373,7 +372,7 @@ func TestSimpleAdapterRegistry(t *testing.T) {
 	status, err := registry.GetAdapterStatus("test-adapter")
 	require.NoError(t, err)
 	assert.Equal(t, "test-adapter", status.Name)
-	assert.Equal(t, adapters.StatusActive, status.Status)
+	assert.Equal(t, types.StatusActive, status.Status)
 	
 	// Test unregistering adapter
 	registry.UnregisterAdapter("test-adapter")

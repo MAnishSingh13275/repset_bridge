@@ -112,7 +112,7 @@ function Sign-WindowsBinary {
             /p $env:WINDOWS_CERT_PASSWORD `
             /n $ProjectName `
             /d "Gym Door Access Bridge" `
-            /du "https://yourdomain.com" `
+            /du "https://repset.onezy.in" `
             /t "http://timestamp.digicert.com" `
             $BinaryPath
         

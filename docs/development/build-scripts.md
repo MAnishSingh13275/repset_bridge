@@ -92,7 +92,7 @@ export MACOS_NOTARY_PASSWORD="app-specific-password"
 # With custom settings
 VERSION=1.2.3 \
 ROLLOUT_PERCENTAGE=50 \
-CDN_BASE_URL=https://cdn.yourdomain.com/gym-door-bridge \
+CDN_BASE_URL=https://cdn.repset.onezy.in/gym-door-bridge \
 ./scripts/generate-manifest.sh
 ```
 
