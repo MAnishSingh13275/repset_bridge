@@ -1,6 +1,15 @@
-# Gym Door Bridge Installation Guide
+# RepSet Bridge Installation Guide
 
-This guide walks you through installing the Gym Door Bridge as a Windows service with automatic biometric device discovery.
+This guide walks you through installing the RepSet Bridge as a Windows service with automatic biometric device discovery and platform integration.
+
+## 📖 Documentation Quick Links
+
+- **🚀 [Quick Start](#-quick-start)** - Get started immediately
+- **📋 [System Requirements](./system-requirements.md)** - Check compatibility
+- **🔧 [Troubleshooting Guide](./troubleshooting-guide.md)** - Resolve issues
+- **❓ [FAQ](./faq.md)** - Common questions
+- **👥 [Gym Owner Guide](./gym-owner-guide.md)** - Non-technical guide
+- **📚 [Documentation Index](./documentation-index.md)** - All documentation
 
 ## 🚀 Quick Start
 
@@ -325,3 +334,41 @@ If you encounter issues:
 - Network traffic is unencrypted (device limitation)
 - Logs may contain sensitive information
 - Regular security updates recommended
+
+## 📚 Additional Resources
+
+### 📖 Documentation
+- **[System Requirements](./system-requirements.md)** - Detailed compatibility information
+- **[Troubleshooting Guide](./troubleshooting-guide.md)** - Comprehensive problem resolution
+- **[FAQ](./faq.md)** - Frequently asked questions
+- **[Gym Owner Guide](./gym-owner-guide.md)** - Simplified installation guide
+- **[Documentation Index](./documentation-index.md)** - Complete documentation overview
+
+### 🆘 Getting Help
+- **Email Support:** bridge-support@repset.com
+- **GitHub Issues:** [Report bugs or request features](https://github.com/MAnishSingh13275/repset_bridge/issues)
+- **Community Forum:** https://community.repset.com
+- **Video Tutorials:** https://docs.repset.com/bridge/videos
+
+### 🔧 Quick Diagnostic Commands
+```powershell
+# Check service status
+Get-Service -Name "RepSetBridge"
+
+# Test platform connectivity
+Test-NetConnection -ComputerName api.repset.com -Port 443
+
+# View recent logs
+Get-Content "C:\Program Files\RepSet\Bridge\logs\bridge.log" | Select-Object -Last 20
+
+# Check system requirements
+Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, TotalPhysicalMemory
+```
+
+### 📋 Before Contacting Support
+Please collect this information:
+1. **System Information:** Windows version, PowerShell version, .NET Framework version
+2. **Error Messages:** Exact error text and screenshots
+3. **Log Files:** Installation and service logs
+4. **Network Configuration:** Connectivity test results
+5. **Installation Command:** The exact command used

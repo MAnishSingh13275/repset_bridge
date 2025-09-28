@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"sync"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 	"gym-door-bridge/internal/logging"
 	"gym-door-bridge/internal/processor"
 	"gym-door-bridge/internal/queue"
+	"gym-door-bridge/internal/service/windows"
+	"gym-door-bridge/internal/telemetry"
 	"gym-door-bridge/internal/tier"
 	"gym-door-bridge/internal/types"
 )
@@ -42,6 +45,12 @@ type Manager struct {
 	
 	// API server
 	apiServer       *api.Server
+	
+	// Service health monitoring (Windows only)
+	serviceHealthMonitor *windows.ServiceHealthMonitor
+	
+	// Installation telemetry
+	installationTelemetry *telemetry.InstallationTelemetry
 	
 	// State
 	isRunning       bool
@@ -239,6 +248,20 @@ func (m *Manager) initializeComponents() error {
 	}
 	m.submissionService.SetConfig(submissionConfig)
 	
+	// Initialize installation telemetry
+	m.installationTelemetry = telemetry.NewInstallationTelemetry(m.logger, m.config)
+
+	// Initialize service health monitor on Windows
+	if runtime.GOOS == "windows" {
+		healthConfig := windows.DefaultServiceHealthMonitorConfig()
+		serviceHealthMonitor, err := windows.NewServiceHealthMonitor(m.logger, healthConfig)
+		if err != nil {
+			m.logger.WithError(err).Warn("Failed to initialize service health monitor")
+		} else {
+			m.serviceHealthMonitor = serviceHealthMonitor
+		}
+	}
+
 	// Initialize API server if enabled
 	if m.config.APIServer.Enabled {
 		serverConfig := &api.ServerConfig{
@@ -309,6 +332,15 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.logger.Info("Starting periodic event submission service")
 		m.submissionService.StartPeriodicSubmission(m.ctx)
 	}()
+
+	// Start service health monitor if available
+	if m.serviceHealthMonitor != nil {
+		if err := m.serviceHealthMonitor.Start(); err != nil {
+			m.logger.WithError(err).Warn("Failed to start service health monitor")
+		} else {
+			m.logger.Info("Service health monitor started")
+		}
+	}
 	
 	// Start API server if enabled
 	if m.apiServer != nil {
@@ -332,6 +364,15 @@ func (m *Manager) Start(ctx context.Context) error {
 	
 	m.isRunning = true
 	m.logger.Info("Bridge manager started successfully")
+
+	// Log installation status on startup
+	if m.installationTelemetry != nil {
+		go func() {
+			// Wait a bit for all components to start
+			time.Sleep(5 * time.Second)
+			m.installationTelemetry.LogInstallationStatus(m.ctx)
+		}()
+	}
 	
 	// Release the lock before waiting
 	m.mu.Unlock()
@@ -363,6 +404,14 @@ func (m *Manager) shutdown() error {
 	
 	var errors []error
 	
+	// Stop service health monitor
+	if m.serviceHealthMonitor != nil {
+		if err := m.serviceHealthMonitor.Stop(); err != nil {
+			m.logger.WithError(err).Error("Failed to stop service health monitor")
+			errors = append(errors, fmt.Errorf("service health monitor stop: %w", err))
+		}
+	}
+
 	// Stop API server
 	if m.apiServer != nil {
 		if err := m.apiServer.Shutdown(); err != nil {
@@ -451,6 +500,19 @@ func (m *Manager) GetStats() map[string]interface{} {
 		"version":   m.version,
 		"deviceID":  m.deviceID,
 	}
+
+	// Add installation metadata to stats
+	if m.config != nil {
+		stats["installation"] = map[string]interface{}{
+			"method":       m.config.Installation.Method,
+			"version":      m.config.Installation.Version,
+			"installed_at": m.config.Installation.InstalledAt,
+			"installed_by": m.config.Installation.InstalledBy,
+			"pair_code":    m.config.Installation.PairCode,
+			"source":       m.config.Installation.Source,
+			"checksum":     m.config.Installation.Checksum,
+		}
+	}
 	
 	if m.isRunning {
 		stats["startTime"] = m.startTime
@@ -487,6 +549,16 @@ func (m *Manager) GetStats() map[string]interface{} {
 		if m.tierDetector != nil {
 			stats["tier"] = m.tierDetector.GetCurrentTier()
 			stats["resources"] = m.tierDetector.GetCurrentResources()
+		}
+
+		// Add service health information if available
+		if m.serviceHealthMonitor != nil {
+			stats["service_health"] = m.serviceHealthMonitor.GetHealthSummary()
+		}
+
+		// Add installation telemetry metrics
+		if m.installationTelemetry != nil {
+			stats["installation_metrics"] = m.installationTelemetry.GetInstallationMetrics()
 		}
 	}
 	

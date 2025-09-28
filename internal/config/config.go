@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gym-door-bridge/internal/types"
 
@@ -48,6 +49,9 @@ type Config struct {
 
 	// API server configuration
 	APIServer APIServerConfig `mapstructure:"api_server"`
+
+	// Installation metadata
+	Installation InstallationMetadata `mapstructure:"installation"`
 }
 
 // APIServerConfig holds API server specific configuration
@@ -108,6 +112,17 @@ type SecurityConfig struct {
 	ContentTypeOptions    bool   `mapstructure:"content_type_options"`
 	XSSProtection         bool   `mapstructure:"xss_protection"`
 	ReferrerPolicy        string `mapstructure:"referrer_policy"`
+}
+
+// InstallationMetadata holds information about how the bridge was installed
+type InstallationMetadata struct {
+	Method      string `mapstructure:"method"`       // "automated", "manual", "upgrade"
+	Version     string `mapstructure:"version"`      // Bridge version at installation
+	InstalledAt string `mapstructure:"installed_at"` // ISO timestamp
+	InstalledBy string `mapstructure:"installed_by"` // "automated-installer", "admin", etc.
+	PairCode    string `mapstructure:"pair_code"`    // Original pairing code used
+	Source      string `mapstructure:"source"`       // "github", "local", etc.
+	Checksum    string `mapstructure:"checksum"`     // SHA-256 of installed executable
 }
 
 // DefaultConfig returns a configuration with default values
@@ -171,6 +186,15 @@ func DefaultConfig() *Config {
 				XSSProtection:         true,
 				ReferrerPolicy:        "strict-origin-when-cross-origin",
 			},
+		},
+		Installation: InstallationMetadata{
+			Method:      "manual",
+			Version:     "",
+			InstalledAt: "",
+			InstalledBy: "",
+			PairCode:    "",
+			Source:      "local",
+			Checksum:    "",
 		},
 	}
 }
@@ -287,6 +311,15 @@ func setDefaults(v *viper.Viper, cfg *Config) {
 	v.SetDefault("api_server.security.content_type_options", cfg.APIServer.Security.ContentTypeOptions)
 	v.SetDefault("api_server.security.xss_protection", cfg.APIServer.Security.XSSProtection)
 	v.SetDefault("api_server.security.referrer_policy", cfg.APIServer.Security.ReferrerPolicy)
+
+	// Installation metadata defaults
+	v.SetDefault("installation.method", cfg.Installation.Method)
+	v.SetDefault("installation.version", cfg.Installation.Version)
+	v.SetDefault("installation.installed_at", cfg.Installation.InstalledAt)
+	v.SetDefault("installation.installed_by", cfg.Installation.InstalledBy)
+	v.SetDefault("installation.pair_code", cfg.Installation.PairCode)
+	v.SetDefault("installation.source", cfg.Installation.Source)
+	v.SetDefault("installation.checksum", cfg.Installation.Checksum)
 }
 
 // Validate validates the configuration
@@ -427,10 +460,62 @@ func (c *Config) Save(configFile string) error {
 	v.Set("api_server.security.xss_protection", c.APIServer.Security.XSSProtection)
 	v.Set("api_server.security.referrer_policy", c.APIServer.Security.ReferrerPolicy)
 
+	// Installation metadata
+	v.Set("installation.method", c.Installation.Method)
+	v.Set("installation.version", c.Installation.Version)
+	v.Set("installation.installed_at", c.Installation.InstalledAt)
+	v.Set("installation.installed_by", c.Installation.InstalledBy)
+	v.Set("installation.pair_code", c.Installation.PairCode)
+	v.Set("installation.source", c.Installation.Source)
+	v.Set("installation.checksum", c.Installation.Checksum)
+
 	// Write the configuration file
 	if err := v.WriteConfig(); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
+}
+
+// UpdateInstallationMetadata updates the installation metadata in the configuration
+func (c *Config) UpdateInstallationMetadata(metadata InstallationMetadata) error {
+	c.Installation = metadata
+	return nil
+}
+
+// SetInstallationMethod sets the installation method and updates timestamp
+func (c *Config) SetInstallationMethod(method, installedBy, pairCode, source, checksum string) {
+	c.Installation.Method = method
+	c.Installation.Version = c.GetBridgeVersion()
+	c.Installation.InstalledAt = time.Now().UTC().Format(time.RFC3339)
+	c.Installation.InstalledBy = installedBy
+	c.Installation.PairCode = pairCode
+	c.Installation.Source = source
+	c.Installation.Checksum = checksum
+}
+
+// GetBridgeVersion returns the current bridge version (placeholder for now)
+func (c *Config) GetBridgeVersion() string {
+	// This would typically be set during build time
+	// For now, return a placeholder
+	return "1.3.0"
+}
+
+// IsAutomatedInstallation returns true if the bridge was installed via automated installer
+func (c *Config) IsAutomatedInstallation() bool {
+	return c.Installation.Method == "automated"
+}
+
+// GetInstallationAge returns how long ago the bridge was installed
+func (c *Config) GetInstallationAge() (time.Duration, error) {
+	if c.Installation.InstalledAt == "" {
+		return 0, fmt.Errorf("installation timestamp not available")
+	}
+
+	installedAt, err := time.Parse(time.RFC3339, c.Installation.InstalledAt)
+	if err != nil {
+		return 0, fmt.Errorf("invalid installation timestamp: %w", err)
+	}
+
+	return time.Since(installedAt), nil
 }
