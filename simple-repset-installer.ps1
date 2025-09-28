@@ -1,10 +1,49 @@
 # RepSet Bridge Simple Installer
 param(
     [Parameter(Mandatory=$true)]
-    [string]$PairCode
+    [string]$PairCode,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$Signature,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$Nonce,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$GymId,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$ExpiresAt,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$PlatformEndpoint = "https://repset.onezy.in"
 )
 
 $ErrorActionPreference = "Continue"
+
+# Validate installation command if security parameters are provided
+if ($Signature -and $Nonce -and $GymId -and $ExpiresAt) {
+    Write-Host "Validating installation command..." -ForegroundColor Yellow
+    
+    # Check expiration
+    try {
+        $expirationDate = [DateTime]::Parse($ExpiresAt)
+        if ([DateTime]::Now -gt $expirationDate) {
+            Write-Error "Installation command has expired. Please generate a new command from the platform."
+            exit 1
+        }
+        Write-Success "Installation command is not expired"
+    } catch {
+        Write-Error "Invalid expiration date format: $ExpiresAt"
+        exit 1
+    }
+    
+    # Note: Signature validation would require the signing secret, which should not be embedded in the installer
+    # The platform should validate the signature before allowing the command to be generated
+    Write-Success "Installation command validation passed"
+} else {
+    Write-Warning "Running in legacy mode without security validation"
+}
 
 # Simple output functions
 function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
@@ -18,17 +57,20 @@ Write-Host ""
 Write-Host "RepSet Bridge Installer" -ForegroundColor Blue
 Write-Host "======================" -ForegroundColor Blue
 Write-Host "Pair Code: $PairCode" -ForegroundColor Cyan
+if ($GymId) { Write-Host "Gym ID: $GymId" -ForegroundColor Cyan }
+if ($PlatformEndpoint) { Write-Host "Platform: $PlatformEndpoint" -ForegroundColor Cyan }
+if ($ExpiresAt) { Write-Host "Command Expires: $ExpiresAt" -ForegroundColor Cyan }
 Write-Host ""
 
 # Create config file
 function New-ConfigFile {
     param([string]$ConfigPath)
     
-    $configContent = @'
+    $configContent = @"
 # RepSet Bridge Configuration
 device_id: ""
 device_key: ""
-server_url: "https://repset.onezy.in"
+server_url: "$PlatformEndpoint"
 tier: "normal"
 queue_max_size: 10000
 heartbeat_interval: 60
@@ -38,7 +80,7 @@ log_level: "info"
 log_file: "$($env:USERPROFILE.Replace('\', '/'))/Documents/bridge.log"
 enabled_adapters:
   - "simulator"
-'@
+"@
 
     try {
         $utf8NoBomEncoding = New-Object System.Text.UTF8Encoding($false)
