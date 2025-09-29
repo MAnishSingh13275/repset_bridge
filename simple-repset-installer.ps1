@@ -21,6 +21,13 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+# Simple output functions
+function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
+function Write-Error { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Warning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
+function Write-Step { param([string]$Step, [string]$Message) Write-Host "[$Step] $Message" -ForegroundColor White }
+
 # Validate installation command if security parameters are provided
 if ($Signature -and $Nonce -and $GymId -and $ExpiresAt) {
     Write-Host "Validating installation command..." -ForegroundColor Yellow
@@ -44,13 +51,6 @@ if ($Signature -and $Nonce -and $GymId -and $ExpiresAt) {
 } else {
     Write-Warning "Running in legacy mode without security validation"
 }
-
-# Simple output functions
-function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
-function Write-Error { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
-function Write-Warning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
-function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
-function Write-Step { param([string]$Step, [string]$Message) Write-Host "[$Step] $Message" -ForegroundColor White }
 
 Clear-Host
 Write-Host ""
