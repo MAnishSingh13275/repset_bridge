@@ -5,6 +5,8 @@
 param(
     [Parameter(Mandatory=$true)]
     [string]$PairCode,
+    [string]$DeviceId = "",
+    [string]$DeviceKey = "",
     [switch]$Silent = $false,
     [switch]$Force = $false,
     [string]$InstallPath = "",
@@ -305,10 +307,10 @@ function New-ConfigurationFile {
         [string]$PairCode
     )
     
-    # Create a minimal working config file - start with absolute basics
+    # Create a minimal working config file with platform-provided credentials
     $configContent = @"
-device_id: ""
-device_key: ""
+device_id: "$DeviceId"
+device_key: "$DeviceKey"
 server_url: "$script:REPSET_SERVER"
 tier: "normal"
 queue_max_size: 10000
@@ -333,10 +335,16 @@ enabled_adapters:
             $workingConfig = Invoke-RestMethod -Uri $workingConfigUrl -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
             
             if ($workingConfig -and $workingConfig.Length -gt 100) {
-                # Use the working config directly
+                # Inject device credentials into the working config if provided
+                if ($DeviceId -and $DeviceKey) {
+                    Write-Info "Injecting platform device credentials into config..."
+                    $workingConfig = $workingConfig -replace 'device_id: ""', "device_id: `"$DeviceId`""
+                    $workingConfig = $workingConfig -replace 'device_key: ""', "device_key: `"$DeviceKey`""
+                }
+                
                 $workingConfig | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force -ErrorAction Stop
                 $configDownloaded = $true
-                Write-Success "Downloaded working config.yaml from repository"
+                Write-Success "Downloaded and configured working config.yaml from repository"
             }
         } catch {
             Write-Warning "Could not download working config: $($_.Exception.Message)"
@@ -731,7 +739,12 @@ function Show-InstallationSummary {
             Write-Host "To pair the device manually:" -ForegroundColor Cyan
             Write-Host "1. Open Command Prompt as Administrator" -ForegroundColor White
             Write-Host "2. Navigate to: cd `"C:\Program Files\GymDoorBridge`"" -ForegroundColor Green
-            Write-Host "3. Run: gym-door-bridge.exe pair --pair-code $PairCode" -ForegroundColor Green
+            if ($DeviceId -and $DeviceKey) {
+                Write-Host "3. Device credentials already configured in config file" -ForegroundColor Green
+                Write-Host "4. Run: gym-door-bridge.exe pair --pair-code $PairCode" -ForegroundColor Green
+            } else {
+                Write-Host "3. Run: gym-door-bridge.exe pair --pair-code $PairCode" -ForegroundColor Green
+            }
             Write-Host ""
         }
         
@@ -767,6 +780,8 @@ if (-not $Silent) {
     Write-Host "RepSet Bridge Installer v$script:INSTALLER_VERSION" -ForegroundColor Cyan
     Write-Host "=" * 50 -ForegroundColor Cyan
     Write-Host "Pair Code: $PairCode" -ForegroundColor Gray
+    if ($DeviceId) { Write-Host "Device ID: $DeviceId" -ForegroundColor Gray }
+    if ($DeviceKey) { Write-Host "Device Key: $($DeviceKey.Substring(0,8))..." -ForegroundColor Gray }
     Write-Host "Platform: $script:REPSET_SERVER" -ForegroundColor Gray
     Write-Host "Bridge Version: $script:BRIDGE_VERSION" -ForegroundColor Gray
     Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)" -ForegroundColor Gray
@@ -807,6 +822,23 @@ try {
         Exit-WithMessage -Message "Invalid pair code format. Expected format: XXXX-XXXX-XXXX (e.g., A1B2-C3D4-E5F6)" -ExitCode 1 -IsError
     }
     Write-Success "Pair code format is valid"
+    
+    # Validate device credentials if provided
+    if ($DeviceId -or $DeviceKey) {
+        Write-Info "Validating device credentials..."
+        if ([string]::IsNullOrWhiteSpace($DeviceId)) {
+            Exit-WithMessage -Message "Device ID cannot be empty when device credentials are provided" -ExitCode 1 -IsError
+        }
+        if ([string]::IsNullOrWhiteSpace($DeviceKey)) {
+            Exit-WithMessage -Message "Device Key cannot be empty when device credentials are provided" -ExitCode 1 -IsError
+        }
+        if ($DeviceKey.Length -lt 32) {
+            Exit-WithMessage -Message "Device Key appears to be too short (minimum 32 characters expected)" -ExitCode 1 -IsError
+        }
+        Write-Success "Device credentials are valid"
+    } else {
+        Write-Info "No device credentials provided - bridge will generate its own"
+    }
     
     # Test internet connectivity
     Write-Info "Testing internet connectivity..."
