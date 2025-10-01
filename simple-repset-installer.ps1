@@ -304,7 +304,9 @@ function Test-ExecutableIntegrity {
 function New-ConfigurationFile {
     param(
         [string]$ConfigPath,
-        [string]$PairCode
+        [string]$PairCode,
+        [string]$DeviceId = "",
+        [string]$DeviceKey = ""
     )
     
     # Create a minimal working config file with platform-provided credentials
@@ -338,8 +340,12 @@ enabled_adapters:
                 # Inject device credentials into the working config if provided
                 if ($DeviceId -and $DeviceKey) {
                     Write-Info "Injecting platform device credentials into config..."
+                    Write-Info "Using Device ID: $DeviceId"
+                    Write-Info "Using Device Key: $($DeviceKey.Substring(0,8))..."
                     $workingConfig = $workingConfig -replace 'device_id: ""', "device_id: `"$DeviceId`""
                     $workingConfig = $workingConfig -replace 'device_key: ""', "device_key: `"$DeviceKey`""
+                } else {
+                    Write-Info "No device credentials provided - using config defaults"
                 }
                 
                 $workingConfig | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force -ErrorAction Stop
@@ -353,6 +359,13 @@ enabled_adapters:
         # Method 2: Fallback to minimal config if download failed
         if (-not $configDownloaded) {
             Write-Info "Using minimal configuration template..."
+            if ($DeviceId -and $DeviceKey) {
+                Write-Info "Including provided device credentials in minimal config"
+                Write-Info "Device ID: $DeviceId"
+                Write-Info "Device Key: $($DeviceKey.Substring(0,8))..."
+            } else {
+                Write-Info "No device credentials provided - config will have empty credentials"
+            }
             $configContent | Out-File -FilePath $ConfigPath -Encoding UTF8 -Force -ErrorAction Stop
         }
         
@@ -938,7 +951,7 @@ try {
     
     # Create configuration file
     $ConfigFile = Join-Path $InstallDir "config.yaml"
-    if (-not (New-ConfigurationFile -ConfigPath $ConfigFile -PairCode $PairCode)) {
+    if (-not (New-ConfigurationFile -ConfigPath $ConfigFile -PairCode $PairCode -DeviceId $DeviceId -DeviceKey $DeviceKey)) {
         Exit-WithMessage -Message "Failed to create configuration file" -ExitCode 1 -IsError
     }
     Write-Info "Configuration file created"
