@@ -562,6 +562,136 @@ function Invoke-DevicePairing {
     }
 }
 
+# Set up automated heartbeat service
+function Setup-HeartbeatService {
+    param([string]$InstallDir)
+    
+    try {
+        Write-Info "Creating heartbeat service script..."
+        
+        # Create the heartbeat service script
+        $heartbeatScript = @"
+# Bridge Heartbeat Service
+# This script sends periodic heartbeats to the RepSet platform
+
+param(
+    [string]`$ConfigPath = "$InstallDir\config.yaml",
+    [string]`$LogPath = "$InstallDir\heartbeat.log"
+)
+
+function Write-Log {
+    param([string]`$Message)
+    `$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "`$timestamp - `$Message" | Add-Content -Path `$LogPath -ErrorAction SilentlyContinue
+}
+
+function Read-BridgeConfig {
+    param([string]`$ConfigPath)
+    
+    try {
+        `$config = @{}
+        `$content = Get-Content `$ConfigPath -Raw -ErrorAction Stop
+        
+        if (`$content -match 'device_id:\s*(.+)') {
+            `$config.device_id = `$matches[1].Trim()
+        }
+        if (`$content -match 'device_key:\s*(.+)') {
+            `$config.device_key = `$matches[1].Trim()
+        }
+        if (`$content -match 'server_url:\s*(.+)') {
+            `$config.server_url = `$matches[1].Trim()
+        }
+        
+        return `$config
+    } catch {
+        Write-Log "ERROR: Failed to read config file: `$(`$_.Exception.Message)"
+        return `$null
+    }
+}
+
+function Send-Heartbeat {
+    param([string]`$DeviceId, [string]`$DeviceKey, [string]`$ServerUrl)
+    
+    try {
+        `$heartbeatPayload = @{
+            device_id = `$DeviceId
+            device_key = `$DeviceKey
+            status = @{
+                version = "1.4.0"
+                uptime = [int]((Get-Date) - (Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Select-Object -First 1).StartTime).TotalSeconds
+                connected_devices = 1
+                last_event_time = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+                system_info = @{
+                    platform = "windows"
+                    arch = "amd64"
+                    memory = [math]::Round((Get-WmiObject -Class Win32_ComputerSystem).TotalPhysicalMemory / 1MB)
+                    cpu = (Get-WmiObject -Class Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+                }
+            }
+        } | ConvertTo-Json -Depth 3
+        
+        `$heartbeatUrl = "`$ServerUrl/api/v1/bridge/heartbeat"
+        `$response = Invoke-RestMethod -Uri `$heartbeatUrl -Method POST -Body `$heartbeatPayload -ContentType "application/json" -UseBasicParsing -TimeoutSec 30
+        
+        Write-Log "SUCCESS: Heartbeat sent successfully"
+        return `$true
+        
+    } catch {
+        Write-Log "ERROR: Heartbeat failed - `$(`$_.Exception.Message)"
+        return `$false
+    }
+}
+
+# Main execution
+`$config = Read-BridgeConfig -ConfigPath `$ConfigPath
+
+if (-not `$config -or -not `$config.device_id -or -not `$config.device_key -or -not `$config.server_url) {
+    Write-Log "ERROR: Invalid configuration"
+    exit 1
+}
+
+`$success = Send-Heartbeat -DeviceId `$config.device_id -DeviceKey `$config.device_key -ServerUrl `$config.server_url
+exit (`$success ? 0 : 1)
+"@
+
+        # Write the heartbeat script to the installation directory
+        $heartbeatScriptPath = Join-Path $InstallDir "bridge-heartbeat-service.ps1"
+        $heartbeatScript | Out-File -FilePath $heartbeatScriptPath -Encoding UTF8 -Force
+        Write-Info "Heartbeat script created"
+        
+        # Create scheduled task for heartbeats
+        Write-Info "Creating scheduled task for automated heartbeats..."
+        
+        $taskName = "RepSet Bridge Heartbeat"
+        
+        # Remove existing task if it exists
+        $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        if ($existingTask) {
+            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        }
+        
+        # Create scheduled task components
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$heartbeatScriptPath`""
+        $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Seconds 60) -RepetitionDuration (New-TimeSpan -Days 365)
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
+        $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+        
+        # Register the scheduled task
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "Sends heartbeats from RepSet Bridge to platform every 60 seconds" -ErrorAction Stop
+        
+        # Start the task immediately
+        Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        
+        Write-Success "Automated heartbeat service configured successfully"
+        return $true
+        
+    } catch {
+        Write-Warning "Failed to set up heartbeat service: $($_.Exception.Message)"
+        Write-Info "Bridge will still work, but status updates may be delayed"
+        return $false
+    }
+}
+
 # Start service with comprehensive retry logic and troubleshooting
 function Start-BridgeService {
     try {
@@ -734,6 +864,13 @@ function Show-InstallationSummary {
     
     Write-Host ""
     Write-Success "RepSet Gym Door Bridge is ready for gym door access management!"
+    
+    if ($HeartbeatSetup) {
+        Write-Success "Automated heartbeat service configured - bridge will stay connected to platform"
+    } else {
+        Write-Warning "Heartbeat service setup failed - you may need to configure it manually"
+    }
+    
     Write-Host ""
     
     # Provide manual startup commands since automatic startup failed
@@ -980,8 +1117,12 @@ try {
         Exit-WithMessage -Message "Failed to install Windows service" -ExitCode 1 -IsError
     }
     
-    # Step 8: Pair device and start service
-    Write-Step "8/8" "Finalizing installation"
+    # Step 8: Set up heartbeat service
+    Write-Step "8/9" "Setting up automated heartbeat service"
+    $HeartbeatSetup = Setup-HeartbeatService -InstallDir $InstallDir
+    
+    # Step 9: Pair device and start service
+    Write-Step "9/9" "Finalizing installation"
     
     # Pair the device
     Write-Info "Pairing device with RepSet platform..."
