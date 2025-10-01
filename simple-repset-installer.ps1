@@ -582,7 +582,17 @@ param(
 function Write-Log {
     param([string]`$Message)
     `$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "`$timestamp - `$Message" | Add-Content -Path `$LogPath -ErrorAction SilentlyContinue
+    `$logMessage = "`$timestamp - `$Message"
+    
+    # Try to write to log file, fall back to console only if permission denied
+    try {
+        `$logMessage | Add-Content -Path `$LogPath -ErrorAction Stop
+    } catch {
+        # If we can't write to the log file, just continue with console output
+        # This prevents the service from failing due to permission issues
+    }
+    
+    Write-Host `$logMessage
 }
 
 function Read-BridgeConfig {
@@ -613,12 +623,23 @@ function Send-Heartbeat {
     param([string]`$DeviceId, [string]`$DeviceKey, [string]`$ServerUrl)
     
     try {
+        # Calculate uptime safely
+        `$uptime = 0
+        try {
+            `$process = Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (`$process) { 
+                `$uptime = [int]((Get-Date) - `$process.StartTime).TotalSeconds 
+            }
+        } catch {
+            # Process not found or error calculating uptime
+        }
+
         `$heartbeatPayload = @{
             device_id = `$DeviceId
             device_key = `$DeviceKey
             status = @{
                 version = "1.4.0"
-                uptime = [int]((Get-Date) - (Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Select-Object -First 1).StartTime).TotalSeconds
+                uptime = `$uptime
                 connected_devices = 1
                 last_event_time = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
                 system_info = @{
@@ -631,27 +652,49 @@ function Send-Heartbeat {
         } | ConvertTo-Json -Depth 3
         
         `$heartbeatUrl = "`$ServerUrl/api/v1/bridge/heartbeat"
+        Write-Log "Sending heartbeat to: `$heartbeatUrl"
+        
         `$response = Invoke-RestMethod -Uri `$heartbeatUrl -Method POST -Body `$heartbeatPayload -ContentType "application/json" -UseBasicParsing -TimeoutSec 30
         
         Write-Log "SUCCESS: Heartbeat sent successfully"
+        Write-Log "Response: `$(`$response | ConvertTo-Json -Compress)"
+        
         return `$true
         
     } catch {
         Write-Log "ERROR: Heartbeat failed - `$(`$_.Exception.Message)"
+        
+        if (`$_.Exception.Response) {
+            `$statusCode = `$_.Exception.Response.StatusCode
+            Write-Log "ERROR: HTTP Status Code: `$statusCode"
+        }
+        
         return `$false
     }
 }
 
 # Main execution
+Write-Log "=== Bridge Heartbeat Service Starting ==="
+
 `$config = Read-BridgeConfig -ConfigPath `$ConfigPath
 
 if (-not `$config -or -not `$config.device_id -or -not `$config.device_key -or -not `$config.server_url) {
-    Write-Log "ERROR: Invalid configuration"
+    Write-Log "ERROR: Invalid configuration. Missing device_id, device_key, or server_url"
     exit 1
 }
 
+Write-Log "Device ID: `$(`$config.device_id)"
+Write-Log "Server URL: `$(`$config.server_url)"
+
 `$success = Send-Heartbeat -DeviceId `$config.device_id -DeviceKey `$config.device_key -ServerUrl `$config.server_url
-exit (`$success ? 0 : 1)
+
+if (`$success) {
+    Write-Log "=== Heartbeat completed successfully ==="
+    exit 0
+} else {
+    Write-Log "=== Heartbeat failed ==="
+    exit 1
+}
 "@
 
         # Write the heartbeat script to the installation directory
@@ -672,12 +715,12 @@ exit (`$success ? 0 : 1)
         
         # Create scheduled task components
         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$heartbeatScriptPath`""
-        $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Seconds 60) -RepetitionDuration (New-TimeSpan -Days 365)
+        $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 365)
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
         $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
         
         # Register the scheduled task
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "Sends heartbeats from RepSet Bridge to platform every 60 seconds" -ErrorAction Stop
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "Sends heartbeats from RepSet Bridge to platform every 5 minutes" -ErrorAction Stop
         
         # Start the task immediately
         Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -1084,6 +1127,17 @@ try {
     # Create installation directory
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Write-Info "Created installation directory"
+    
+    # Set permissions for heartbeat service to write logs
+    try {
+        $acl = Get-Acl $InstallDir
+        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $acl.SetAccessRule($accessRule)
+        Set-Acl -Path $InstallDir -AclObject $acl
+        Write-Info "Directory permissions configured for heartbeat service"
+    } catch {
+        Write-Warning "Could not set directory permissions: $($_.Exception.Message)"
+    }
     
     # Copy executable
     $TargetExe = Join-Path $InstallDir "gym-door-bridge.exe"

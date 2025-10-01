@@ -1,6 +1,6 @@
 # Bridge Heartbeat Service
 # This script sends periodic heartbeats to the RepSet platform
-# Run this as a scheduled task every 60 seconds
+# Run this as a scheduled task every 5 minutes
 
 param(
     [string]$ConfigPath = "C:\Program Files\GymDoorBridge\config.yaml",
@@ -10,8 +10,17 @@ param(
 function Write-Log {
     param([string]$Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp - $Message" | Add-Content -Path $LogPath
-    Write-Host "$timestamp - $Message"
+    $logMessage = "$timestamp - $Message"
+    
+    # Try to write to log file, fall back to console only if permission denied
+    try {
+        $logMessage | Add-Content -Path $LogPath -ErrorAction Stop
+    } catch {
+        # If we can't write to the log file, just continue with console output
+        # This prevents the service from failing due to permission issues
+    }
+    
+    Write-Host $logMessage
 }
 
 function Read-BridgeConfig {
@@ -47,12 +56,23 @@ function Send-Heartbeat {
     )
     
     try {
+        # Calculate uptime safely
+        $uptime = 0
+        try {
+            $process = Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($process) { 
+                $uptime = [int]((Get-Date) - $process.StartTime).TotalSeconds 
+            }
+        } catch {
+            # Process not found or error calculating uptime
+        }
+
         $heartbeatPayload = @{
             device_id = $DeviceId
             device_key = $DeviceKey
             status = @{
                 version = "1.4.0"
-                uptime = [int]((Get-Date) - (Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Select-Object -First 1).StartTime).TotalSeconds
+                uptime = $uptime
                 connected_devices = 1
                 last_event_time = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
                 system_info = @{
