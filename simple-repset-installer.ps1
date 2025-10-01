@@ -161,7 +161,7 @@ function Remove-ExistingInstallation {
                 Write-Success "Service stopped"
             }
             
-            & sc.exe delete $script:SERVICE_NAME | Out-Null
+            cmd.exe /c "sc.exe delete `"$script:SERVICE_NAME`"" | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Service removed"
             }
@@ -355,33 +355,25 @@ function Install-WindowsService {
             throw "Config file not found: $ConfigPath"
         }
         
-        # Create service
+        # Create service with proper sc.exe syntax
         $binPath = "`"$ExecutablePath`" --config `"$ConfigPath`""
-        $createArgs = @(
-            "create",
-            $script:SERVICE_NAME,
-            "binPath=",
-            $binPath,
-            "start=",
-            "auto",
-            "DisplayName=",
-            $script:SERVICE_DISPLAY_NAME,
-            "depend=",
-            "Tcpip"
-        )
         
-        Write-Debug "Creating service with command: sc.exe $($createArgs -join ' ')"
+        Write-Debug "Creating service with binPath: $binPath"
         
-        $result = & sc.exe @createArgs 2>&1
+        # Use cmd.exe to properly handle sc.exe arguments
+        $scCommand = "sc.exe create `"$script:SERVICE_NAME`" binPath= `"$binPath`" start= auto DisplayName= `"$script:SERVICE_DISPLAY_NAME`""
+        Write-Debug "Service creation command: $scCommand"
+        
+        $result = cmd.exe /c $scCommand 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "Service creation failed with exit code $LASTEXITCODE`: $result"
         }
         
         # Set service description
-        & sc.exe description $script:SERVICE_NAME "RepSet Gym Door Access Bridge - Manages gym door access control integration with RepSet platform" | Out-Null
+        cmd.exe /c "sc.exe description `"$script:SERVICE_NAME`" `"RepSet Gym Door Access Bridge - Manages gym door access control integration with RepSet platform`"" | Out-Null
         
         # Configure service recovery options
-        & sc.exe failure $script:SERVICE_NAME reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+        cmd.exe /c "sc.exe failure `"$script:SERVICE_NAME`" reset= 86400 actions= restart/5000/restart/10000/restart/30000" | Out-Null
         
         # Verify service was created
         $service = Get-Service -Name $script:SERVICE_NAME -ErrorAction SilentlyContinue
