@@ -385,6 +385,27 @@ pair_code_used: "$PairCode"
 "@
 
     try {
+        # Try to download and use the working config.yaml.example as a template
+        $exampleConfigUrl = "https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/config.yaml.example"
+        try {
+            Write-Info "Attempting to download working config template..."
+            $exampleConfig = Invoke-RestMethod -Uri $exampleConfigUrl -UseBasicParsing -TimeoutSec 10
+            
+            if ($exampleConfig -and $exampleConfig.Length -gt 1000) {
+                # Customize the example config with our values
+                $customizedConfig = $exampleConfig -replace 'device_id: ""', 'device_id: ""' -replace 'device_key: ""', 'device_key: ""'
+                $customizedConfig = $customizedConfig + "`n`n# Installation metadata`ninstaller_version: `"$script:INSTALLER_VERSION`"`nbridge_version: `"$script:BRIDGE_VERSION`"`ninstall_date: `"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`"`npair_code_used: `"$PairCode`""
+                
+                Write-Info "Using working config template from repository"
+                $configContent = $customizedConfig
+            } else {
+                throw "Downloaded config template is too small"
+            }
+        } catch {
+            Write-Warning "Could not download config template: $($_.Exception.Message)"
+            Write-Info "Using built-in config template"
+        }
+        
         # Create config file with proper UTF8 encoding (no BOM)
         [System.IO.File]::WriteAllText($ConfigPath, $configContent, [System.Text.UTF8Encoding]::new($false))
         
@@ -404,6 +425,11 @@ pair_code_used: "$PairCode"
         }
         
         Write-Info "Configuration file created with $(($createdContent -split "`n").Count) lines"
+        
+        # Debug: Show first few lines of config file
+        $firstLines = ($createdContent -split "`n")[0..5] -join "`n"
+        Write-Debug "Config file preview: $firstLines"
+        
         return $true
         
     } catch {
@@ -748,6 +774,48 @@ function Show-InstallationSummary {
     Write-Host ""
     Write-Success "RepSet Gym Door Bridge is ready for gym door access management!"
     Write-Host ""
+    
+    # Provide manual startup commands since automatic startup failed
+    if (-not $ServiceStarted -or -not $PairingSuccessful) {
+        Write-Host "=" * 60 -ForegroundColor Yellow
+        Write-Host "MANUAL STARTUP COMMANDS" -ForegroundColor Yellow
+        Write-Host "=" * 60 -ForegroundColor Yellow
+        Write-Host ""
+        
+        if (-not $ServiceStarted) {
+            Write-Host "To start the service manually:" -ForegroundColor Cyan
+            Write-Host "1. Open Command Prompt as Administrator" -ForegroundColor White
+            Write-Host "2. Run: net start GymDoorBridge" -ForegroundColor Green
+            Write-Host "   OR" -ForegroundColor Gray
+            Write-Host "   Open Services.msc and start 'RepSet Gym Door Bridge'" -ForegroundColor Green
+            Write-Host ""
+        }
+        
+        if (-not $PairingSuccessful) {
+            Write-Host "To pair the device manually:" -ForegroundColor Cyan
+            Write-Host "1. Open Command Prompt as Administrator" -ForegroundColor White
+            Write-Host "2. Navigate to: cd `"C:\Program Files\GymDoorBridge`"" -ForegroundColor Green
+            Write-Host "3. Run: gym-door-bridge.exe pair --pair-code $PairCode" -ForegroundColor Green
+            Write-Host ""
+        }
+        
+        Write-Host "To test the configuration:" -ForegroundColor Cyan
+        Write-Host "1. Open Command Prompt as Administrator" -ForegroundColor White
+        Write-Host "2. Navigate to: cd `"C:\Program Files\GymDoorBridge`"" -ForegroundColor Green
+        Write-Host "3. Run: gym-door-bridge.exe --help" -ForegroundColor Green
+        Write-Host "4. Run: gym-door-bridge.exe status" -ForegroundColor Green
+        Write-Host ""
+        
+        Write-Host "Once started manually, the service will:" -ForegroundColor Cyan
+        Write-Host "Start automatically on system boot" -ForegroundColor Green
+        Write-Host "Run in the background continuously" -ForegroundColor Green
+        Write-Host "Handle gym door access requests" -ForegroundColor Green
+        Write-Host ""
+        
+        Write-Host "Config file location: C:\Program Files\GymDoorBridge\config.yaml" -ForegroundColor Gray
+        Write-Host "Service name: GymDoorBridge" -ForegroundColor Gray
+        Write-Host ""
+    }
 }
 
 # Initialize variables
