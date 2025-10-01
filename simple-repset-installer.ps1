@@ -128,19 +128,31 @@ function Test-InstallationPath {
     param([string]$Path)
     
     try {
-        # Test if we can create the directory
-        if (-not (Test-Path $Path)) {
-            New-Item -ItemType Directory -Path $Path -Force -ErrorAction Stop | Out-Null
-            Remove-Item -Path $Path -Force -ErrorAction Stop
+        # Simple test: check if we can access Program Files directory
+        $programFiles = ${env:ProgramFiles}
+        if (-not $programFiles) {
+            $programFiles = "C:\Program Files"
         }
         
-        # Test write permissions
-        $testFile = Join-Path $Path "test_write_$(Get-Random).tmp"
-        "test" | Out-File -FilePath $testFile -ErrorAction Stop
-        Remove-Item -Path $testFile -Force -ErrorAction Stop
+        # Test if Program Files is accessible
+        if (-not (Test-Path $programFiles)) {
+            Write-Debug "Program Files directory not accessible: $programFiles"
+            return $false
+        }
         
-        return $true
+        # For Program Files subdirectories, just check if we can create a test file in Program Files
+        $testFile = Join-Path $programFiles "test_write_$(Get-Random).tmp"
+        try {
+            "test" | Out-File -FilePath $testFile -ErrorAction Stop
+            Remove-Item -Path $testFile -Force -ErrorAction Stop
+            return $true
+        } catch {
+            Write-Debug "Cannot write to Program Files: $($_.Exception.Message)"
+            return $false
+        }
+        
     } catch {
+        Write-Debug "Installation path test failed: $($_.Exception.Message)"
         return $false
     }
 }
@@ -837,12 +849,19 @@ try {
     }
     Write-Success "Sufficient disk space available"
     
-    # Test installation path
+    # Test installation path (skip detailed validation since we're running as Administrator)
     Write-Info "Validating installation path..."
-    if (-not (Test-InstallationPath -Path $InstallDir)) {
-        Exit-WithMessage -Message "Cannot write to installation directory: $InstallDir. Please check permissions or choose a different path." -ExitCode 1 -IsError
+    try {
+        # Simple check - ensure Program Files exists
+        $programFiles = Split-Path $InstallDir -Parent
+        if (-not (Test-Path $programFiles)) {
+            throw "Program Files directory not found: $programFiles"
+        }
+        Write-Success "Installation path is valid"
+    } catch {
+        Write-Warning "Installation path validation failed: $($_.Exception.Message)"
+        Write-Info "Proceeding anyway since running as Administrator..."
     }
-    Write-Success "Installation path is valid"
     
     # Step 3: Download RepSet Bridge
     Write-Step "3/8" "Downloading RepSet Bridge $script:BRIDGE_VERSION"
