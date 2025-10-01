@@ -161,7 +161,16 @@ function Remove-ExistingInstallation {
                 Write-Success "Service stopped"
             }
             
-            cmd.exe /c "sc.exe delete `"$script:SERVICE_NAME`"" | Out-Null
+            # Try PowerShell Remove-Service first (PS 6+), fallback to sc.exe
+            try {
+                if (Get-Command Remove-Service -ErrorAction SilentlyContinue) {
+                    Remove-Service -Name $script:SERVICE_NAME -Force -ErrorAction Stop
+                } else {
+                    & sc.exe delete $script:SERVICE_NAME | Out-Null
+                }
+            } catch {
+                & sc.exe delete $script:SERVICE_NAME | Out-Null
+            }
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Service removed"
             }
@@ -355,25 +364,32 @@ function Install-WindowsService {
             throw "Config file not found: $ConfigPath"
         }
         
-        # Create service with proper sc.exe syntax
+        # Create service using New-Service cmdlet (more reliable than sc.exe)
         $binPath = "`"$ExecutablePath`" --config `"$ConfigPath`""
         
         Write-Debug "Creating service with binPath: $binPath"
         
-        # Use cmd.exe to properly handle sc.exe arguments
-        $scCommand = "sc.exe create `"$script:SERVICE_NAME`" binPath= `"$binPath`" start= auto DisplayName= `"$script:SERVICE_DISPLAY_NAME`""
-        Write-Debug "Service creation command: $scCommand"
-        
-        $result = cmd.exe /c $scCommand 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Service creation failed with exit code $LASTEXITCODE`: $result"
+        try {
+            # Use PowerShell's New-Service cmdlet instead of sc.exe
+            New-Service -Name $script:SERVICE_NAME -BinaryPathName $binPath -DisplayName $script:SERVICE_DISPLAY_NAME -StartupType Automatic -ErrorAction Stop
+            Write-Debug "Service created successfully using New-Service"
+        } catch {
+            # Fallback to sc.exe with proper syntax
+            Write-Debug "New-Service failed, trying sc.exe fallback: $($_.Exception.Message)"
+            
+            # Use proper sc.exe syntax with individual arguments
+            $result = & sc.exe create $script:SERVICE_NAME binPath= $binPath start= auto DisplayName= $script:SERVICE_DISPLAY_NAME 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "Service creation failed with both New-Service and sc.exe. Last error: $result"
+            }
         }
         
-        # Set service description
-        cmd.exe /c "sc.exe description `"$script:SERVICE_NAME`" `"RepSet Gym Door Access Bridge - Manages gym door access control integration with RepSet platform`"" | Out-Null
+        # Set service description using sc.exe (no PowerShell equivalent)
+        $description = "RepSet Gym Door Access Bridge - Manages gym door access control integration with RepSet platform"
+        & sc.exe description $script:SERVICE_NAME $description | Out-Null
         
-        # Configure service recovery options
-        cmd.exe /c "sc.exe failure `"$script:SERVICE_NAME`" reset= 86400 actions= restart/5000/restart/10000/restart/30000" | Out-Null
+        # Configure service recovery options using sc.exe
+        & sc.exe failure $script:SERVICE_NAME reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
         
         # Verify service was created
         $service = Get-Service -Name $script:SERVICE_NAME -ErrorAction SilentlyContinue
