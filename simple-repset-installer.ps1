@@ -342,8 +342,12 @@ enabled_adapters:
                     Write-Info "Injecting platform device credentials into config..."
                     Write-Info "Using Device ID: $DeviceId"
                     Write-Info "Using Device Key: $($DeviceKey.Substring(0,8))..."
-                    $workingConfig = $workingConfig -replace 'device_id: ""', "device_id: `"$DeviceId`""
-                    $workingConfig = $workingConfig -replace 'device_key: ""', "device_key: `"$DeviceKey`""
+                    
+                    # Replace any existing device_id and device_key values
+                    $workingConfig = $workingConfig -replace 'device_id: .*', "device_id: $DeviceId"
+                    $workingConfig = $workingConfig -replace 'device_key: .*', "device_key: $DeviceKey"
+                    
+                    Write-Info "Device credentials injected successfully"
                 } else {
                     Write-Info "No device credentials provided - using config defaults"
                 }
