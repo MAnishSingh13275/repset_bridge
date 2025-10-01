@@ -13,7 +13,9 @@ Your RepSet Bridge has been successfully installed and is ready to connect your 
 ## If You Need Help
 
 ### Quick Status Check
+
 Open PowerShell and run:
+
 ```powershell
 cd "C:\Program Files\GymDoorBridge"
 .\bridge-support-tool.ps1 -Action status
@@ -22,33 +24,40 @@ cd "C:\Program Files\GymDoorBridge"
 ### Common Solutions
 
 **Bridge Not Showing as Active?**
+
 ```powershell
 .\bridge-support-tool.ps1 -Action start
 ```
 
 **Need to Restart the Bridge?**
+
 ```powershell
 .\bridge-support-tool.ps1 -Action restart
 ```
 
 **View Recent Logs?**
+
 ```powershell
 .\bridge-support-tool.ps1 -Action logs
 ```
 
 ### Manual Start (if needed)
+
 If automatic startup isn't working, you can start the bridge manually:
+
 ```powershell
 cd "C:\Program Files\GymDoorBridge"
 .\gym-door-bridge.exe --config "C:\Users\[USERNAME]\Documents\repset-bridge-config.yaml"
 ```
-*Replace [USERNAME] with your actual username*
+
+_Replace [USERNAME] with your actual username_
 
 ## Support
 
 If you need assistance:
 
-1. **Run Diagnostics**: 
+1. **Run Diagnostics**:
+
    ```powershell
    .\bridge-support-tool.ps1 -Action test
    ```

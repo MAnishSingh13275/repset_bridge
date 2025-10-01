@@ -44,6 +44,12 @@ if (-not $Silent) {
 function New-CorrectConfigFile {
     param([string]$ConfigPath)
     
+    # Validate ConfigPath is not empty
+    if (-not $ConfigPath -or $ConfigPath.Trim() -eq "") {
+        Write-Error "ConfigPath parameter is empty or null"
+        return $false
+    }
+    
     $configContent = @"
 # Gym Door Bridge Configuration - RepSet Platform
 # Device configuration (set during pairing process)
@@ -161,9 +167,20 @@ try {
 
     # Check and remove existing installation
     Write-Step "5/7" "Preparing installation..."
+    
+    # Ensure ProgramFiles path is available
+    if (-not $env:ProgramFiles) {
+        $env:ProgramFiles = "C:\Program Files"
+    }
+    
     $installPath = "$env:ProgramFiles\GymDoorBridge"
     $targetExe = "$installPath\gym-door-bridge.exe"
     $configPath = "$installPath\config.yaml"
+    
+    # Validate paths are not empty
+    if (-not $installPath -or -not $targetExe -or -not $configPath) {
+        throw "Failed to create installation paths. ProgramFiles: $env:ProgramFiles"
+    }
     
     # Stop and remove existing service
     $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
