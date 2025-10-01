@@ -397,6 +397,22 @@ function Install-WindowsService {
             throw "Service was not created successfully"
         }
         
+        # Ensure service is set to automatic startup (double-check)
+        try {
+            Set-Service -Name $script:SERVICE_NAME -StartupType Automatic -ErrorAction Stop
+            Write-Info "Service startup type confirmed as Automatic"
+        } catch {
+            Write-Warning "Could not set service startup type: $($_.Exception.Message)"
+        }
+        
+        # Set service to start automatically after installation
+        try {
+            & sc.exe config $script:SERVICE_NAME start= auto | Out-Null
+            Write-Info "Service configured for automatic startup"
+        } catch {
+            Write-Warning "Could not configure automatic startup: $($_.Exception.Message)"
+        }
+        
         Write-Success "Windows service installed successfully"
         return $true
         
@@ -429,8 +445,7 @@ function Invoke-DevicePairing {
             "pair",
             "--pair-code", $PairCode,
             "--config", $ConfigPath,
-            "--timeout", "15",
-            "--verbose"
+            "--timeout", "15"
         )
         
         $outputFile = Join-Path $TempDir "pair_output.txt"
@@ -496,12 +511,12 @@ function Invoke-DevicePairing {
     }
 }
 
-# Start service with retry logic
+# Start service with comprehensive retry logic and troubleshooting
 function Start-BridgeService {
     try {
         Write-Info "Starting RepSet Bridge service..."
         
-        # Start service with timeout
+        # Get service object
         $service = Get-Service -Name $script:SERVICE_NAME -ErrorAction Stop
         
         if ($service.Status -eq "Running") {
@@ -509,19 +524,118 @@ function Start-BridgeService {
             return $true
         }
         
-        Start-Service -Name $script:SERVICE_NAME -ErrorAction Stop
+        # Try multiple approaches to start the service
+        $startupAttempts = 3
+        for ($attempt = 1; $attempt -le $startupAttempts; $attempt++) {
+            try {
+                Write-Info "Service startup attempt $attempt of $startupAttempts..."
+                
+                # Method 1: Use Start-Service cmdlet
+                Start-Service -Name $script:SERVICE_NAME -ErrorAction Stop
+                
+                # Wait for service to start with timeout
+                $timeout = 15
+                $service.Refresh()
+                $service.WaitForStatus("Running", [TimeSpan]::FromSeconds($timeout))
+                
+                # Verify service is actually running
+                $service.Refresh()
+                if ($service.Status -eq "Running") {
+                    Write-Success "Service started successfully on attempt $attempt"
+                    return $true
+                } else {
+                    throw "Service status is $($service.Status) after start attempt"
+                }
+                
+            } catch {
+                Write-Warning "Attempt $attempt failed: $($_.Exception.Message)"
+                
+                if ($attempt -lt $startupAttempts) {
+                    Write-Info "Waiting 3 seconds before retry..."
+                    Start-Sleep -Seconds 3
+                    
+                    # Try alternative method: net start command
+                    if ($attempt -eq 2) {
+                        Write-Info "Trying alternative startup method (net start)..."
+                        try {
+                            $netResult = & net start $script:SERVICE_NAME 2>&1
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Info "net start command succeeded"
+                                Start-Sleep -Seconds 2
+                                $service.Refresh()
+                                if ($service.Status -eq "Running") {
+                                    Write-Success "Service started using net start command"
+                                    return $true
+                                }
+                            } else {
+                                Write-Warning "net start failed: $netResult"
+                            }
+                        } catch {
+                            Write-Warning "net start command failed: $($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+        }
         
-        # Wait for service to start with timeout
-        $timeout = 30
-        $service.WaitForStatus("Running", [TimeSpan]::FromSeconds($timeout))
+        # If all attempts failed, try to diagnose the issue
+        Write-Warning "All service startup attempts failed. Diagnosing issue..."
         
-        Write-Success "Service started successfully"
-        return $true
+        # Check service configuration
+        $service.Refresh()
+        Write-Info "Service Status: $($service.Status)"
+        Write-Info "Service StartType: $($service.StartType)"
+        
+        # Check if executable exists and is accessible
+        $serviceConfig = Get-WmiObject -Class Win32_Service -Filter "Name='$script:SERVICE_NAME'"
+        if ($serviceConfig) {
+            Write-Info "Service Path: $($serviceConfig.PathName)"
+            
+            # Extract executable path from service path
+            $exePath = $serviceConfig.PathName -replace '^"([^"]+)".*', '$1'
+            if (Test-Path $exePath) {
+                Write-Info "Executable exists and is accessible"
+                
+                # Try to run executable directly to check for issues
+                try {
+                    Write-Info "Testing executable directly..."
+                    $testProcess = Start-Process -FilePath $exePath -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\bridge_test_output.txt" -RedirectStandardError "$env:TEMP\bridge_test_error.txt"
+                    
+                    if ($testProcess.ExitCode -eq 0) {
+                        Write-Info "Executable runs correctly"
+                    } else {
+                        Write-Warning "Executable test failed with exit code: $($testProcess.ExitCode)"
+                        
+                        # Show error output if available
+                        if (Test-Path "$env:TEMP\bridge_test_error.txt") {
+                            $errorOutput = Get-Content "$env:TEMP\bridge_test_error.txt" -Raw
+                            if ($errorOutput) {
+                                Write-Warning "Executable error: $errorOutput"
+                            }
+                        }
+                    }
+                } catch {
+                    Write-Warning "Could not test executable: $($_.Exception.Message)"
+                }
+            } else {
+                Write-Warning "Executable not found at: $exePath"
+            }
+        }
+        
+        # Provide detailed troubleshooting information
+        Write-Info "Service startup failed. Troubleshooting steps:"
+        Write-Info "1. Check Windows Event Viewer (Windows Logs > System) for service errors"
+        Write-Info "2. Verify the executable has proper permissions"
+        Write-Info "3. Try starting the service manually from Services.msc"
+        Write-Info "4. Check if antivirus is blocking the service"
+        Write-Info "5. Restart Windows to trigger automatic service startup"
+        
+        return $false
         
     } catch {
-        Write-Warning "Service could not be started automatically: $($_.Exception.Message)"
-        Write-Info "The service is installed and will start automatically on next boot"
-        Write-Info "You can start it manually from Services.msc or by restarting Windows"
+        Write-Warning "Service startup error: $($_.Exception.Message)"
+        Write-Info "The service is installed and configured for automatic startup"
+        Write-Info "It will start automatically when Windows boots"
         return $false
     }
 }
