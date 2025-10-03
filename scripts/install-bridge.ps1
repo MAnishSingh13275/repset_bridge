@@ -25,10 +25,17 @@ $existingService = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContin
 if ($existingService -and -not $Force) {
     Write-Host "⚠️  Gym Door Bridge is already installed!" -ForegroundColor Yellow
     Write-Host "Service Status: $($existingService.Status)" -ForegroundColor White
-    Write-Host "Use -Force parameter to reinstall or run 'gym-door-bridge status' to check status." -ForegroundColor Yellow
-    Write-Host "Press any key to continue..." -ForegroundColor Yellow
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    return
+    
+    # If pair code is provided, automatically reinstall and re-pair
+    if ($PairCode) {
+        Write-Host "🔄 Pair code provided - will reinstall and re-pair automatically..." -ForegroundColor Green
+        $Force = $true
+    } else {
+        Write-Host "Use -Force parameter to reinstall or run 'gym-door-bridge status' to check status." -ForegroundColor Yellow
+        Write-Host "Press any key to continue..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        return
+    }
 }
 
 try {
@@ -180,6 +187,31 @@ try {
     # Pair device if pair code provided
     if ($PairCode) {
         Write-Host "🔗 Pairing device with platform..." -ForegroundColor Green
+        
+        # First, try to unpair if already paired (for re-pairing scenarios)
+        try {
+            $pairExePath = "$InstallPath\gym-door-bridge.exe"
+            if (-not (Test-Path $pairExePath)) {
+                $pairExePath = $fullExePath
+            }
+            
+            # Check if already paired by trying to get status
+            $statusProcess = Start-Process -FilePath $pairExePath -ArgumentList "status" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\status-output.log" -RedirectStandardError "$env:TEMP\status-error.log"
+            
+            if ($statusProcess.ExitCode -eq 0) {
+                $statusOutput = Get-Content "$env:TEMP\status-output.log" -Raw -ErrorAction SilentlyContinue
+                if ($statusOutput -and $statusOutput -match "PAIRED") {
+                    Write-Host "🔄 Device is already paired - unpairing first..." -ForegroundColor Yellow
+                    $unpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow
+                    if ($unpairProcess.ExitCode -eq 0) {
+                        Write-Host "✅ Successfully unpaired existing device" -ForegroundColor Green
+                    }
+                }
+            }
+        } catch {
+            Write-Host "⚠️  Could not check existing pairing status: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        
         try {
             $pairExePath = "$InstallPath\gym-door-bridge.exe"
             if (-not (Test-Path $pairExePath)) {
