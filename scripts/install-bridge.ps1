@@ -116,7 +116,7 @@ try {
     )
     
     foreach ($pattern in $searchPaths) {
-        $found = Get-ChildItem -Path $tempExtract -Name $pattern -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found = Get-ChildItem -Path $tempExtract -Filter "gym-door-bridge.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) {
             $exePath = $found
             break
@@ -137,12 +137,41 @@ try {
     if ($existingService) {
         Write-Host "🛑 Stopping existing service..." -ForegroundColor Yellow
         try {
+            # Force stop the service with timeout
+            $stopTimeout = 30 # seconds
+            $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+            
             Stop-Service -Name "GymDoorBridge" -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-            & "$fullExePath" uninstall -ErrorAction SilentlyContinue
-            Write-Host "✅ Existing service stopped and uninstalled" -ForegroundColor Green
+            
+            # Wait for service to stop with timeout
+            do {
+                Start-Sleep -Seconds 1
+                $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+            } while ($service.Status -eq "Running" -and $stopWatch.Elapsed.TotalSeconds -lt $stopTimeout)
+            
+            $stopWatch.Stop()
+            
+            if ($service.Status -eq "Stopped") {
+                Write-Host "✅ Service stopped successfully" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  Service did not stop within timeout, forcing termination..." -ForegroundColor Yellow
+                # Try to kill the process
+                Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Try to uninstall the service
+            try {
+                $existingExePath = "$InstallPath\gym-door-bridge.exe"
+                if (Test-Path $existingExePath) {
+                    & "$existingExePath" uninstall -ErrorAction SilentlyContinue
+                    Write-Host "✅ Existing service uninstalled" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "⚠️  Could not uninstall existing service, continuing..." -ForegroundColor Yellow
+            }
+            
         } catch {
-            Write-Host "⚠️  Warning: Could not fully uninstall existing service: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "⚠️  Warning: Could not fully stop existing service: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     }
     
