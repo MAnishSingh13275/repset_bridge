@@ -19,12 +19,12 @@ Complete documentation is available in the [`docs/`](docs/) directory:
 **🚀 One-Click Smart Web Install:**
 ```powershell
 # Run PowerShell as Administrator, then:
-iex (iwr -useb https://raw.githubusercontent.com/MAnish13275/repset_bridge/main/scripts/install-bridge.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/scripts/install-bridge.ps1).Content
 ```
 ⭐ **NEW**: Includes smart pairing with automatic unpair/re-pair capability!
 
 **📦 Download & Install:**
-1. Download: [gym-door-bridge-windows.zip](https://github.com/MAnish13275/repset_bridge/releases/latest)
+1. Download: [gym-door-bridge-windows.zip](https://github.com/MAnishSingh13275/repset_bridge/releases/latest)
 2. Extract and run PowerShell as Administrator, then run `scripts\install.ps1`
 
 ### For Developers

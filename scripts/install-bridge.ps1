@@ -29,7 +29,7 @@ if ($existingService -and -not $Force) {
 try {
     # Download latest release
     Write-Host "📥 Downloading latest Gym Door Bridge..." -ForegroundColor Green
-    $downloadUrl = "https://github.com/MAnish13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
+    $downloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
     $tempZip = "$env:TEMP\gym-door-bridge.zip"
     $tempExtract = "$env:TEMP\gym-door-bridge"
     
