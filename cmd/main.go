@@ -489,8 +489,8 @@ This removes the secure connection and device credentials.`,
 	rootCmd.AddCommand(unpairCmd)
 	rootCmd.AddCommand(statusCmd)
 }
-// 
-restartWindowsService restarts the Windows service
+
+// restartWindowsService restarts the Windows service
 func restartWindowsService() error {
 	if runtime.GOOS != "windows" {
 		return fmt.Errorf("not running on Windows")
