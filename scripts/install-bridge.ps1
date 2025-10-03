@@ -275,27 +275,22 @@ try {
         Write-Host "🔗 Pairing device with platform..." -ForegroundColor Green
         
         # First, try to unpair if already paired (for re-pairing scenarios)
+        $pairExePath = "$InstallPath\gym-door-bridge.exe"
+        if (-not (Test-Path $pairExePath)) {
+            $pairExePath = $fullExePath
+        }
+        
+        # Always try to unpair first to ensure clean pairing
+        Write-Host "🔄 Ensuring clean pairing state..." -ForegroundColor Yellow
         try {
-            $pairExePath = "$InstallPath\gym-door-bridge.exe"
-            if (-not (Test-Path $pairExePath)) {
-                $pairExePath = $fullExePath
-            }
-            
-            # Check if already paired by trying to get status
-            $statusProcess = Start-Process -FilePath $pairExePath -ArgumentList "status" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\status-output.log" -RedirectStandardError "$env:TEMP\status-error.log"
-            
-            if ($statusProcess.ExitCode -eq 0) {
-                $statusOutput = Get-Content "$env:TEMP\status-output.log" -Raw -ErrorAction SilentlyContinue
-                if ($statusOutput -and $statusOutput -match "PAIRED") {
-                    Write-Host "🔄 Device is already paired - unpairing first..." -ForegroundColor Yellow
-                    $unpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow
-                    if ($unpairProcess.ExitCode -eq 0) {
-                        Write-Host "✅ Successfully unpaired existing device" -ForegroundColor Green
-                    }
-                }
+            $unpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\unpair-output.log" -RedirectStandardError "$env:TEMP\unpair-error.log"
+            if ($unpairProcess.ExitCode -eq 0) {
+                Write-Host "✅ Successfully cleared existing pairing" -ForegroundColor Green
+            } else {
+                Write-Host "ℹ️  No existing pairing to clear" -ForegroundColor White
             }
         } catch {
-            Write-Host "⚠️  Could not check existing pairing status: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "ℹ️  No existing pairing to clear" -ForegroundColor White
         }
         
         try {
@@ -323,12 +318,32 @@ try {
                 if (Test-Path "$env:TEMP\pair-error.log") {
                     $errorOutput = Get-Content "$env:TEMP\pair-error.log" -Raw
                 }
-                Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
-                if ($errorOutput) {
-                    Write-Host "Error details: $errorOutput" -ForegroundColor Yellow
+                
+                # Check if it's an "already paired" error and try to handle it
+                if ($errorOutput -and $errorOutput -match "already paired") {
+                    Write-Host "🔄 Device reports already paired, attempting force re-pair..." -ForegroundColor Yellow
+                    
+                    # Try unpair again with more force
+                    $forceUnpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow
+                    Start-Sleep -Seconds 2
+                    
+                    # Try pairing again
+                    $retryPairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow
+                    if ($retryPairProcess.ExitCode -eq 0) {
+                        Write-Host "✅ Device paired successfully on retry!" -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️  Retry pairing also failed" -ForegroundColor Yellow
+                        Write-Host "You can pair manually later using:" -ForegroundColor Yellow
+                        Write-Host "   gym-door-bridge unpair && gym-door-bridge pair $PairCode" -ForegroundColor White
+                    }
+                } else {
+                    Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
+                    if ($errorOutput) {
+                        Write-Host "Error details: $errorOutput" -ForegroundColor Yellow
+                    }
+                    Write-Host "You can pair manually later using:" -ForegroundColor Yellow
+                    Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
                 }
-                Write-Host "You can pair manually later using:" -ForegroundColor Yellow
-                Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
             }
         } catch {
             Write-Host "⚠️  Pairing error: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -337,15 +352,42 @@ try {
         }
     }
     
-    # Check service status
+    # Check service status with better verification
+    Write-Host "🔍 Verifying service status..." -ForegroundColor Yellow
     Start-Sleep -Seconds 3
+    
     $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
-    if ($service -and $service.Status -eq "Running") {
-        Write-Host "✅ Service is running successfully!" -ForegroundColor Green
+    if ($service) {
+        Write-Host "Service Status: $($service.Status)" -ForegroundColor White
+        
+        if ($service.Status -eq "Running") {
+            Write-Host "✅ Service is running successfully!" -ForegroundColor Green
+            
+            # Test API endpoint
+            try {
+                Start-Sleep -Seconds 2
+                $apiResponse = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 10
+                Write-Host "✅ API is responding: HTTP $($apiResponse.StatusCode)" -ForegroundColor Green
+            } catch {
+                Write-Host "⚠️  API not responding yet (this is normal, may take a moment to start)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "⚠️  Service installed but not running. Starting now..." -ForegroundColor Yellow
+            try {
+                Start-Service -Name "GymDoorBridge"
+                Start-Sleep -Seconds 3
+                $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+                if ($service.Status -eq "Running") {
+                    Write-Host "✅ Service started successfully!" -ForegroundColor Green
+                } else {
+                    Write-Host "⚠️  Service failed to start. Status: $($service.Status)" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "❌ Failed to start service: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
     } else {
-        Write-Host "⚠️  Service installation completed but not running. Starting now..." -ForegroundColor Yellow
-        Start-Service -Name "GymDoorBridge"
-        Write-Host "✅ Service started!" -ForegroundColor Green
+        Write-Host "❌ Service not found after installation" -ForegroundColor Red
     }
     
     # Show status
