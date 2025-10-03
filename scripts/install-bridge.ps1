@@ -107,27 +107,44 @@ try {
         $destination.CopyHere($zip.Items(), 4)
     }
     
-    # Find executable with multiple search patterns
+    # Find executable with better search logic
+    Write-Host "🔍 Searching for executable..." -ForegroundColor Yellow
     $exePath = $null
-    $searchPaths = @(
-        "gym-door-bridge.exe",
-        "*/gym-door-bridge.exe",
-        "build/gym-door-bridge.exe"
-    )
     
-    foreach ($pattern in $searchPaths) {
-        $found = Get-ChildItem -Path $tempExtract -Filter "gym-door-bridge.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-            $exePath = $found
-            break
+    # First, list all contents for debugging
+    Write-Host "Package contents:" -ForegroundColor Yellow
+    $allFiles = Get-ChildItem -Path $tempExtract -Recurse -File
+    foreach ($file in $allFiles) {
+        Write-Host "  $($file.FullName)" -ForegroundColor White
+    }
+    
+    # Search for the executable
+    $exePath = Get-ChildItem -Path $tempExtract -Filter "gym-door-bridge.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    
+    if (-not $exePath) {
+        # Try alternative search methods
+        Write-Host "⚠️  Direct search failed, trying alternative methods..." -ForegroundColor Yellow
+        
+        # Method 1: Search by name pattern
+        $exePath = $allFiles | Where-Object { $_.Name -eq "gym-door-bridge.exe" } | Select-Object -First 1
+        
+        # Method 2: Search for any .exe file
+        if (-not $exePath) {
+            $exeFiles = $allFiles | Where-Object { $_.Extension -eq ".exe" }
+            if ($exeFiles.Count -gt 0) {
+                Write-Host "Found .exe files:" -ForegroundColor Yellow
+                foreach ($exe in $exeFiles) {
+                    Write-Host "  $($exe.FullName)" -ForegroundColor White
+                }
+                # Use the first .exe file found
+                $exePath = $exeFiles[0]
+                Write-Host "Using: $($exePath.FullName)" -ForegroundColor Yellow
+            }
         }
     }
     
     if (-not $exePath) {
-        # List contents for debugging
-        Write-Host "⚠️  Executable not found. Package contents:" -ForegroundColor Yellow
-        Get-ChildItem -Path $tempExtract -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" -ForegroundColor White }
-        throw "gym-door-bridge.exe not found in downloaded package"
+        throw "No executable found in downloaded package"
     }
     
     $fullExePath = $exePath.FullName
