@@ -174,14 +174,26 @@ try {
                 Write-Host "⚠️  Service did not stop within timeout, forcing termination..." -ForegroundColor Yellow
                 # Try to kill the process
                 Get-Process -Name "gym-door-bridge" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
             }
+            
+            # Kill any remaining processes that might be using the executable
+            Get-Process -Name "gym-door-bridge*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
             
             # Try to uninstall the service
             try {
                 $existingExePath = "$InstallPath\gym-door-bridge.exe"
                 if (Test-Path $existingExePath) {
-                    & "$existingExePath" uninstall -ErrorAction SilentlyContinue
-                    Write-Host "✅ Existing service uninstalled" -ForegroundColor Green
+                    $uninstallProcess = Start-Process -FilePath $existingExePath -ArgumentList "uninstall" -Wait -PassThru -NoNewWindow
+                    if ($uninstallProcess.ExitCode -eq 0) {
+                        Write-Host "✅ Existing service uninstalled" -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️  Service uninstall returned exit code $($uninstallProcess.ExitCode)" -ForegroundColor Yellow
+                    }
+                    
+                    # Wait a moment for the service to be fully removed
+                    Start-Sleep -Seconds 3
                 }
             } catch {
                 Write-Host "⚠️  Could not uninstall existing service, continuing..." -ForegroundColor Yellow
@@ -211,10 +223,29 @@ try {
         
         # Try copying files manually and installing
         try {
-            # Copy executable to Program Files
+            # Copy executable to Program Files with retry logic
             $targetPath = "$InstallPath\gym-door-bridge.exe"
             New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+            
+            # If target file exists and is in use, try to replace it
+            if (Test-Path $targetPath) {
+                Write-Host "⚠️  Target file exists, attempting to replace..." -ForegroundColor Yellow
+                
+                # Try to remove the existing file
+                for ($i = 0; $i -lt 5; $i++) {
+                    try {
+                        Remove-Item $targetPath -Force
+                        break
+                    } catch {
+                        Write-Host "⚠️  File in use, waiting... (attempt $($i+1)/5)" -ForegroundColor Yellow
+                        Start-Sleep -Seconds 2
+                    }
+                }
+            }
+            
+            # Copy the new file
             Copy-Item -Path $fullExePath -Destination $targetPath -Force
+            Write-Host "✅ Executable copied to $targetPath" -ForegroundColor Green
             
             # Try installation again
             $installProcess2 = Start-Process -FilePath $targetPath -ArgumentList "install" -Wait -PassThru -NoNewWindow
@@ -229,6 +260,15 @@ try {
     }
     
     Write-Host "✅ Installation completed successfully!" -ForegroundColor Green
+    
+    # Verify service installation
+    Start-Sleep -Seconds 2
+    $newService = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+    if ($newService) {
+        Write-Host "✅ Service verification: $($newService.Status)" -ForegroundColor Green
+    } else {
+        Write-Host "⚠️  Service not found after installation" -ForegroundColor Yellow
+    }
     
     # Pair device if pair code provided
     if ($PairCode) {
