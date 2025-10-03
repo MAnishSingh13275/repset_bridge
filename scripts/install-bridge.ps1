@@ -12,7 +12,9 @@ param(
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "❌ This script requires Administrator privileges!" -ForegroundColor Red
     Write-Host "Please run PowerShell as Administrator and try again." -ForegroundColor Yellow
-    exit 1
+    Write-Host "Press any key to continue..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    return
 }
 
 Write-Host "🚀 Gym Door Bridge Installation" -ForegroundColor Cyan
@@ -22,12 +24,15 @@ Write-Host "================================" -ForegroundColor Cyan
 $existingService = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
 if ($existingService -and -not $Force) {
     Write-Host "⚠️  Gym Door Bridge is already installed!" -ForegroundColor Yellow
+    Write-Host "Service Status: $($existingService.Status)" -ForegroundColor White
     Write-Host "Use -Force parameter to reinstall or run 'gym-door-bridge status' to check status." -ForegroundColor Yellow
-    exit 1
+    Write-Host "Press any key to continue..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    return
 }
 
 try {
-    # Download latest release
+    # Download latest release with multiple fallback methods
     Write-Host "📥 Downloading latest Gym Door Bridge..." -ForegroundColor Green
     $downloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
     $tempZip = "$env:TEMP\gym-door-bridge.zip"
@@ -39,34 +44,135 @@ try {
     }
     New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
     
-    # Download with progress
-    $webClient = New-Object System.Net.WebClient
-    $webClient.DownloadFile($downloadUrl, $tempZip)
+    # Try multiple download methods
+    $downloadSuccess = $false
     
-    # Extract
+    # Method 1: Invoke-WebRequest
+    try {
+        Write-Host "Trying download method 1..." -ForegroundColor Yellow
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempZip -UseBasicParsing
+        $downloadSuccess = $true
+        Write-Host "✅ Download method 1 successful" -ForegroundColor Green
+    } catch {
+        Write-Host "⚠️  Download method 1 failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    
+    # Method 2: WebClient (fallback)
+    if (-not $downloadSuccess) {
+        try {
+            Write-Host "Trying download method 2..." -ForegroundColor Yellow
+            $webClient = New-Object System.Net.WebClient
+            $webClient.DownloadFile($downloadUrl, $tempZip)
+            $downloadSuccess = $true
+            Write-Host "✅ Download method 2 successful" -ForegroundColor Green
+        } catch {
+            Write-Host "⚠️  Download method 2 failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+    
+    # Method 3: BITS Transfer (fallback)
+    if (-not $downloadSuccess) {
+        try {
+            Write-Host "Trying download method 3..." -ForegroundColor Yellow
+            Import-Module BitsTransfer -ErrorAction SilentlyContinue
+            Start-BitsTransfer -Source $downloadUrl -Destination $tempZip
+            $downloadSuccess = $true
+            Write-Host "✅ Download method 3 successful" -ForegroundColor Green
+        } catch {
+            Write-Host "⚠️  Download method 3 failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+    
+    if (-not $downloadSuccess) {
+        throw "All download methods failed. Please check your internet connection and try again."
+    }
+    
+    # Extract with error handling
     Write-Host "📦 Extracting files..." -ForegroundColor Green
-    Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
+    try {
+        Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
+    } catch {
+        # Try alternative extraction method
+        Write-Host "⚠️  Standard extraction failed, trying alternative method..." -ForegroundColor Yellow
+        $shell = New-Object -ComObject Shell.Application
+        $zip = $shell.NameSpace($tempZip)
+        $destination = $shell.NameSpace($tempExtract)
+        $destination.CopyHere($zip.Items(), 4)
+    }
     
-    # Find executable
-    $exePath = Get-ChildItem -Path $tempExtract -Name "gym-door-bridge.exe" -Recurse | Select-Object -First 1
+    # Find executable with multiple search patterns
+    $exePath = $null
+    $searchPaths = @(
+        "gym-door-bridge.exe",
+        "*/gym-door-bridge.exe",
+        "build/gym-door-bridge.exe"
+    )
+    
+    foreach ($pattern in $searchPaths) {
+        $found = Get-ChildItem -Path $tempExtract -Name $pattern -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) {
+            $exePath = $found
+            break
+        }
+    }
+    
     if (-not $exePath) {
+        # List contents for debugging
+        Write-Host "⚠️  Executable not found. Package contents:" -ForegroundColor Yellow
+        Get-ChildItem -Path $tempExtract -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" -ForegroundColor White }
         throw "gym-door-bridge.exe not found in downloaded package"
     }
-    $fullExePath = Join-Path $tempExtract $exePath.FullName
+    
+    $fullExePath = $exePath.FullName
+    Write-Host "✅ Found executable: $fullExePath" -ForegroundColor Green
     
     # Stop existing service if running
     if ($existingService) {
         Write-Host "🛑 Stopping existing service..." -ForegroundColor Yellow
-        Stop-Service -Name "GymDoorBridge" -Force -ErrorAction SilentlyContinue
-        & "$fullExePath" uninstall
+        try {
+            Stop-Service -Name "GymDoorBridge" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            & "$fullExePath" uninstall -ErrorAction SilentlyContinue
+            Write-Host "✅ Existing service stopped and uninstalled" -ForegroundColor Green
+        } catch {
+            Write-Host "⚠️  Warning: Could not fully uninstall existing service: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
     }
     
-    # Run installation
+    # Run installation with detailed error handling
     Write-Host "⚙️  Installing Gym Door Bridge..." -ForegroundColor Green
-    $installProcess = Start-Process -FilePath $fullExePath -ArgumentList "install" -Wait -PassThru -NoNewWindow
-    
-    if ($installProcess.ExitCode -ne 0) {
-        throw "Installation failed with exit code $($installProcess.ExitCode)"
+    try {
+        $installProcess = Start-Process -FilePath $fullExePath -ArgumentList "install" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\install-output.log" -RedirectStandardError "$env:TEMP\install-error.log"
+        
+        if ($installProcess.ExitCode -ne 0) {
+            $errorOutput = ""
+            if (Test-Path "$env:TEMP\install-error.log") {
+                $errorOutput = Get-Content "$env:TEMP\install-error.log" -Raw
+            }
+            throw "Installation failed with exit code $($installProcess.ExitCode). Error: $errorOutput"
+        }
+        Write-Host "✅ Service installation completed" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ Installation error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Attempting alternative installation method..." -ForegroundColor Yellow
+        
+        # Try copying files manually and installing
+        try {
+            # Copy executable to Program Files
+            $targetPath = "$InstallPath\gym-door-bridge.exe"
+            New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+            Copy-Item -Path $fullExePath -Destination $targetPath -Force
+            
+            # Try installation again
+            $installProcess2 = Start-Process -FilePath $targetPath -ArgumentList "install" -Wait -PassThru -NoNewWindow
+            if ($installProcess2.ExitCode -eq 0) {
+                Write-Host "✅ Alternative installation method successful" -ForegroundColor Green
+            } else {
+                throw "Alternative installation also failed with exit code $($installProcess2.ExitCode)"
+            }
+        } catch {
+            throw "Both installation methods failed: $($_.Exception.Message)"
+        }
     }
     
     Write-Host "✅ Installation completed successfully!" -ForegroundColor Green
@@ -74,13 +180,42 @@ try {
     # Pair device if pair code provided
     if ($PairCode) {
         Write-Host "🔗 Pairing device with platform..." -ForegroundColor Green
-        $pairProcess = Start-Process -FilePath "$InstallPath\gym-door-bridge.exe" -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow
-        
-        if ($pairProcess.ExitCode -eq 0) {
-            Write-Host "✅ Device paired successfully!" -ForegroundColor Green
-        } else {
-            Write-Host "⚠️  Pairing failed. You can pair manually later using:" -ForegroundColor Yellow
-            Write-Host "   gym-door-bridge pair YOUR_PAIR_CODE" -ForegroundColor White
+        try {
+            $pairExePath = "$InstallPath\gym-door-bridge.exe"
+            if (-not (Test-Path $pairExePath)) {
+                # Try to find the executable in the temp location
+                $pairExePath = $fullExePath
+            }
+            
+            $pairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\pair-output.log" -RedirectStandardError "$env:TEMP\pair-error.log"
+            
+            if ($pairProcess.ExitCode -eq 0) {
+                Write-Host "✅ Device paired successfully!" -ForegroundColor Green
+                
+                # Verify pairing by checking config
+                $configPath = "$InstallPath\config.yaml"
+                if (Test-Path $configPath) {
+                    $configContent = Get-Content $configPath -Raw
+                    if ($configContent -match 'device_id:\s*"([^"]+)"') {
+                        Write-Host "Device ID: $($matches[1])" -ForegroundColor White
+                    }
+                }
+            } else {
+                $errorOutput = ""
+                if (Test-Path "$env:TEMP\pair-error.log") {
+                    $errorOutput = Get-Content "$env:TEMP\pair-error.log" -Raw
+                }
+                Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
+                if ($errorOutput) {
+                    Write-Host "Error details: $errorOutput" -ForegroundColor Yellow
+                }
+                Write-Host "You can pair manually later using:" -ForegroundColor Yellow
+                Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
+            }
+        } catch {
+            Write-Host "⚠️  Pairing error: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "You can pair manually later using:" -ForegroundColor Yellow
+            Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
         }
     }
     
@@ -122,7 +257,9 @@ try {
 } catch {
     Write-Host "❌ Installation failed: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Please check the error and try again, or contact support." -ForegroundColor Yellow
-    exit 1
+    Write-Host "Press any key to continue..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    return
 } finally {
     # Cleanup
     if (Test-Path $tempZip) {
@@ -130,5 +267,11 @@ try {
     }
     if (Test-Path $tempExtract) {
         Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    
+    # Prevent PowerShell from closing when run from command line
+    if ($Host.Name -eq "ConsoleHost") {
+        Write-Host "`nInstallation script completed. Press any key to continue..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
 }
