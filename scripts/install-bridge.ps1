@@ -22,7 +22,7 @@ Write-Host "================================" -ForegroundColor Cyan
 
 # Check if service already exists
 $existingService = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
-if ($existingService -and -not $Force) {
+if ($existingService) {
     Write-Host "⚠️  Gym Door Bridge is already installed!" -ForegroundColor Yellow
     Write-Host "Service Status: $($existingService.Status)" -ForegroundColor White
     
@@ -30,7 +30,7 @@ if ($existingService -and -not $Force) {
     if ($PairCode) {
         Write-Host "🔄 Pair code provided - will reinstall and re-pair automatically..." -ForegroundColor Green
         $Force = $true
-    } else {
+    } elseif (-not $Force) {
         Write-Host "Use -Force parameter to reinstall or run 'gym-door-bridge status' to check status." -ForegroundColor Yellow
         Write-Host "Press any key to continue..." -ForegroundColor Yellow
         $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
