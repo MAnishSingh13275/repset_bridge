@@ -64,7 +64,7 @@ api_server:
 
 ## Quick Install
 Run PowerShell as Administrator:
-iex (iwr -useb https://raw.githubusercontent.com/MAnish13275/repset_bridge/main/scripts/install-bridge.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/scripts/install-bridge.ps1).Content
 
 ## Manual Install
 1. Extract files to C:\GymDoorBridge
@@ -107,13 +107,13 @@ API: http://localhost:8081
 ## Installation
 Run PowerShell as Administrator:
 ``````
-iex (iwr -useb https://raw.githubusercontent.com/MAnish13275/repset_bridge/main/scripts/install-bridge.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/scripts/install-bridge.ps1).Content
 ``````
 
 ## With Pair Code
 ``````
 `$pairCode = "YOUR_PAIR_CODE"
-`$script = iwr -useb https://raw.githubusercontent.com/MAnish13275/repset_bridge/main/scripts/install-bridge.ps1
+`$script = iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/scripts/install-bridge.ps1
 Invoke-Expression "& { `$(`$script.Content) } -PairCode '`$pairCode'"
 ``````
 
@@ -128,10 +128,10 @@ $ReleaseNotes
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "GitHub release created successfully!" -ForegroundColor Green
-        Write-Host "Release URL: https://github.com/MAnish13275/repset_bridge/releases/tag/$Version" -ForegroundColor Cyan
+        Write-Host "Release URL: https://github.com/MAnishSingh13275/repset_bridge/releases/tag/$Version" -ForegroundColor Cyan
         
         Write-Host "`nInstallation Command:" -ForegroundColor Yellow
-        Write-Host "iex (iwr -useb https://raw.githubusercontent.com/MAnish13275/repset_bridge/main/scripts/install-bridge.ps1).Content" -ForegroundColor White
+        Write-Host "iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/scripts/install-bridge.ps1).Content" -ForegroundColor White
     } else {
         throw "GitHub release creation failed"
     }
