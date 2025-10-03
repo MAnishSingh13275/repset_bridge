@@ -31,6 +31,10 @@ test-build
 api.test
 api.test.exe
 
+# Build outputs and checksums
+checksums.txt
+*.checksum
+
 # Runtime data
 /data/
 *.db
@@ -39,9 +43,16 @@ api.test.exe
 *.sqlite
 *.sqlite3
 
+# Backup files (including internal backups)
+**/backups/*.db
+**/backups/*.sqlite
+**/backups/*.sqlite3
+backup_*.db
+backup_*.sqlite
+backup_*.sqlite3
+
 # Configuration files with sensitive data
 config.yaml
-!config.yaml.example
 
 # Log files
 /logs/
@@ -86,3 +97,17 @@ test_*.go
 # Installation artifacts
 install.log
 install.tmp
+
+# Cache and temporary directories
+cache/
+.cache/
+*.cache
+
+# Process and lock files
+*.pid
+*.lock
+
+# Debug and profiling files
+debug
+debug.exe
+*.pprof

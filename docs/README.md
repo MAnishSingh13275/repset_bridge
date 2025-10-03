@@ -37,12 +37,12 @@ A lightweight local agent that connects gym door access hardware (fingerprint, R
 **🚀 One-Click Web Install:**
 ```powershell
 # Run PowerShell as Administrator, then:
-iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/web-install.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/public/install-bridge.ps1).Content
 ```
 
 **📦 Download & Install:**
 1. Download: [gym-door-bridge-windows.zip](https://github.com/your-org/gym-door-bridge/releases/latest)
-2. Extract and run `install.bat` as Administrator
+2. Extract and run PowerShell as Administrator, then run `scripts\install.ps1`
 
 ### For Developers
 
@@ -89,7 +89,7 @@ gym-door-bridge/
 │   └── logging/          # Structured logging setup
 ├── pkg/                  # Public packages (importable by external projects)
 ├── docs/                 # Documentation (this directory)
-├── config.yaml.example  # Example configuration file
+├── examples/             # Configuration examples and templates
 ├── go.mod               # Go module definition
 └── README.md           # This file
 ```

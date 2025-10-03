@@ -1,5 +1,10 @@
 # Multi-Device Configuration Example
 # Configuration for multiple biometric devices
+#
+# SECURITY WARNING: 
+# - Replace all placeholder credentials with actual values
+# - Change default device passwords before production use
+# - Never commit real credentials to version control
 
 # Device configuration
 device:
@@ -38,7 +43,7 @@ adapter_configs:
     device_config:
       ip: "192.168.1.100"
       port: "4370"
-      comm_password: "0"
+      comm_password: "0"  # Change from default if device password was modified
     sync_interval: 30
 
   # ESSL device at back entrance
@@ -48,8 +53,8 @@ adapter_configs:
     device_config:
       ip: "192.168.1.101"
       port: "80"
-      username: "admin"
-      password: "admin"
+      username: "YOUR_DEVICE_USERNAME"  # Change from default
+      password: "YOUR_DEVICE_PASSWORD"  # Change from default
     sync_interval: 30
 
   # Realtime device for staff

@@ -1,5 +1,9 @@
 # Basic Configuration Example
 # Minimal configuration for single ZKTeco device
+#
+# SECURITY WARNING: 
+# - Change default device passwords before production use
+# - Never commit real credentials to version control
 
 # Device configuration
 device:
@@ -31,7 +35,7 @@ adapter_configs:
     device_config:
       ip: "192.168.1.100"
       port: "4370"
-      comm_password: "0"
+      comm_password: "0"  # Change from default if device password was modified
     sync_interval: 30
 
 # Basic queue configuration

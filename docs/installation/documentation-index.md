@@ -111,7 +111,7 @@ This documentation provides comprehensive guidance for installing, configuring, 
 
 ### 🆘 Getting Help
 - **Email Support:** bridge-support@repset.com
-- **GitHub Issues:** https://github.com/MAnishSingh13275/repset_bridge/issues
+- **GitHub Issues:** https://github.com/your-org/gym-door-bridge/issues
 - **Community Forum:** https://community.repset.com
 - **Emergency Support:** For critical production issues
 
@@ -135,7 +135,7 @@ This documentation provides comprehensive guidance for installing, configuring, 
 ## Documentation Maintenance
 
 ### 📝 Contributing to Documentation
-- **Repository:** https://github.com/MAnishSingh13275/repset_bridge
+- **Repository:** https://github.com/your-org/gym-door-bridge
 - **Documentation Path:** `/docs/installation/`
 - **Contribution Guide:** [../development/CONTRIBUTING.md](../development/CONTRIBUTING.md)
 

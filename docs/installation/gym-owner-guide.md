@@ -11,7 +11,7 @@ The Gym Door Bridge connects your existing biometric devices (fingerprint scanne
 1. **Right-click** on Windows PowerShell and select **"Run as administrator"**
 2. **Copy and paste** this command:
    ```powershell
-   iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/web-install.ps1).Content
+   iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/public/install-bridge.ps1).Content
    ```
 3. **Press Enter** and wait 2-3 minutes
 4. **Done!** ✅
@@ -20,9 +20,10 @@ The Gym Door Bridge connects your existing biometric devices (fingerprint scanne
 
 1. **Download**: [gym-door-bridge-installer.zip](https://github.com/your-org/gym-door-bridge/releases/latest)
 2. **Extract** the zip file to your Desktop
-3. **Right-click** on `install.bat` → **"Run as administrator"**
-4. **Wait** for automatic setup (2-3 minutes)
-5. **Done!** ✅
+3. **Right-click** on PowerShell → **"Run as administrator"**
+4. **Navigate** to the extracted folder and run `.\scripts\install.ps1`
+5. **Wait** for automatic setup (2-3 minutes)
+6. **Done!** ✅
 
 ## 🔍 What Happens During Installation?
 
@@ -98,7 +99,7 @@ Have a member use their fingerprint on any connected device. Check-ins should ap
 The bridge automatically checks for updates. To manually update:
 
 1. Download the latest version
-2. Run `install.bat` again (it will update automatically)
+2. Run `.\scripts\install.ps1` again (it will update automatically)
 3. Or use: `gym-door-bridge install --force`
 
 ## 🗑️ Uninstall

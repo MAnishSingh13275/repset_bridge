@@ -5,9 +5,10 @@ This directory contains example configurations, scripts, and usage patterns for 
 ## Configuration Examples
 
 ### Basic Configuration
+- `config-template.yaml` - Complete configuration template with all options
 - `config-basic.yaml` - Minimal configuration for single device
 - `config-multi-device.yaml` - Configuration for multiple devices
-- `config-advanced.yaml` - Advanced configuration with all options
+- `config-production.yaml` - Production-ready configuration
 
 ### Device-Specific Examples
 - `config-zkteco.yaml` - ZKTeco device configuration

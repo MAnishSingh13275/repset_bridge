@@ -8,7 +8,7 @@ The fastest and most reliable way to install:
 
 **Run PowerShell as Administrator, then:**
 ```powershell
-iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/public/install-bridge.ps1).Content
 ```
 
 **Enhanced Features:**
@@ -28,11 +28,11 @@ Choose one of these options:
 
 **Option B: Direct Download**
 Download just the installer:
-- [install.bat](https://github.com/your-org/gym-door-bridge/releases/download/v1.0.0/install.bat)
+- [install.ps1](https://github.com/your-org/gym-door-bridge/releases/download/v1.0.0/scripts/install.ps1)
 
 ### Step 2: Install
-1. **Right-click** on `install.bat`
-2. Select **"Run as administrator"**
+1. **Right-click** on PowerShell and select **"Run as administrator"**
+2. **Navigate** to the extracted folder and run `.\scripts\install.ps1`
 3. Wait for automatic device discovery (2-3 minutes)
 4. Done! ✅
 
@@ -42,8 +42,8 @@ The release package contains:
 ```
 gym-door-bridge-v1.0.0-windows.zip
 ├── gym-door-bridge.exe     # Main service executable
-├── install.bat             # Simple installer
-├── install.ps1             # PowerShell installer (advanced)
+├── scripts/
+│   └── install.ps1         # PowerShell installer
 ├── README.md               # Quick start guide
 └── INSTALLATION.md         # Detailed installation guide
 ```
@@ -90,5 +90,5 @@ If installation fails:
 
 To update an existing installation:
 1. Download new version
-2. Run `install.bat` again (will update automatically)
+2. Run `.\scripts\install.ps1` again (will update automatically)
 3. Or use: `gym-door-bridge.exe install --force`

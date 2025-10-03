@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime"
 	"syscall"
 
+	"gym-door-bridge/internal/auth"
 	"gym-door-bridge/internal/bridge"
+	"gym-door-bridge/internal/client"
 	"gym-door-bridge/internal/config"
 	"gym-door-bridge/internal/installer"
 	"gym-door-bridge/internal/logging"
+	"gym-door-bridge/internal/pairing"
 	"gym-door-bridge/internal/service/windows"
 	"gym-door-bridge/internal/service/macos"
 
@@ -63,6 +67,9 @@ func init() {
 	} else if runtime.GOOS == "darwin" {
 		macos.AddServiceCommands(rootCmd)
 	}
+	
+	// Add pairing commands
+	addPairingCommands()
 }
 
 func main() {
@@ -258,4 +265,262 @@ Requires administrator privileges.`,
 
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
+}
+
+// addPairingCommands adds pairing-related commands
+func addPairingCommands() {
+	var pairCmd = &cobra.Command{
+		Use:   "pair [pair-code]",
+		Short: "Pair the bridge with your gym management platform",
+		Long: `Pair the bridge with your gym management platform using a pair code.
+This establishes a secure connection between the local bridge and your cloud platform.
+
+Example:
+  gym-door-bridge pair ABC123DEF456
+
+The pair code is provided by your gym management platform.`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			pairCode := args[0]
+			
+			// Load configuration
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Initialize components for pairing
+			logger := logging.Initialize(logLevel)
+			
+			// Create auth manager
+			authManager, err := auth.NewAuthManager()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			if err := authManager.Initialize(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to initialize auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Create HTTP client
+			httpClient, err := client.NewHTTPClient(cfg, authManager, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create HTTP client: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Create pairing manager
+			pairingManager, err := pairing.NewPairingManager(httpClient, authManager, cfg, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create pairing manager: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Perform pairing
+			ctx := context.Background()
+			pairResp, err := pairingManager.PairDevice(ctx, pairCode)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Pairing failed: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Update configuration with device credentials
+			cfg.DeviceID = pairResp.DeviceID
+			cfg.DeviceKey = pairResp.DeviceKey
+			
+			// Update installation metadata
+			cfg.SetInstallationMethod("paired", "user", pairCode, "manual", "")
+			
+			// Save updated configuration
+			if err := cfg.Save(configFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to save configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Printf("✅ Bridge paired successfully!\n")
+			fmt.Printf("Device ID: %s\n", pairResp.DeviceID)
+			fmt.Printf("Connected to: %s\n", cfg.ServerURL)
+			
+			// Restart service if running on Windows
+			if runtime.GOOS == "windows" {
+				fmt.Println("\n🔄 Restarting service to apply new configuration...")
+				if err := restartWindowsService(); err != nil {
+					fmt.Printf("⚠️  Failed to restart service automatically: %v\n", err)
+					fmt.Println("Please restart the 'GymDoorBridge' service manually from Services.msc")
+				} else {
+					fmt.Println("✅ Service restarted successfully!")
+				}
+			}
+		},
+	}
+
+	var unpairCmd = &cobra.Command{
+		Use:   "unpair",
+		Short: "Unpair the bridge from your gym management platform",
+		Long: `Unpair the bridge from your gym management platform.
+This removes the secure connection and device credentials.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			// Load configuration
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Initialize components for unpairing
+			logger := logging.Initialize(logLevel)
+			
+			// Create auth manager
+			authManager, err := auth.NewAuthManager()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			if err := authManager.Initialize(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to initialize auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Create HTTP client
+			httpClient, err := client.NewHTTPClient(cfg, authManager, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create HTTP client: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Create pairing manager
+			pairingManager, err := pairing.NewPairingManager(httpClient, authManager, cfg, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create pairing manager: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Check if paired
+			if !pairingManager.IsPaired() {
+				fmt.Println("❌ Bridge is not currently paired")
+				os.Exit(1)
+			}
+			
+			deviceID := pairingManager.GetDeviceID()
+			
+			// Perform unpairing
+			if err := pairingManager.UnpairDevice(); err != nil {
+				fmt.Fprintf(os.Stderr, "Unpairing failed: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Clear configuration credentials
+			cfg.DeviceID = ""
+			cfg.DeviceKey = ""
+			
+			// Save updated configuration
+			if err := cfg.Save(configFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to save configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Printf("✅ Bridge unpaired successfully!\n")
+			fmt.Printf("Previous Device ID: %s\n", deviceID)
+			
+			// Restart service if running on Windows
+			if runtime.GOOS == "windows" {
+				fmt.Println("\n🔄 Restarting service to apply new configuration...")
+				if err := restartWindowsService(); err != nil {
+					fmt.Printf("⚠️  Failed to restart service automatically: %v\n", err)
+					fmt.Println("Please restart the 'GymDoorBridge' service manually from Services.msc")
+				} else {
+					fmt.Println("✅ Service restarted successfully!")
+				}
+			}
+		},
+	}
+
+	var statusCmd = &cobra.Command{
+		Use:   "status",
+		Short: "Show bridge pairing and connection status",
+		Long:  `Display the current pairing status and connection information for the bridge.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			// Load configuration
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Println("🔗 Gym Door Bridge Status")
+			fmt.Println("========================")
+			
+			if cfg.IsPaired() {
+				fmt.Printf("Status: ✅ PAIRED\n")
+				fmt.Printf("Device ID: %s\n", cfg.DeviceID)
+				fmt.Printf("Server URL: %s\n", cfg.ServerURL)
+				fmt.Printf("Tier: %s\n", cfg.Tier)
+				fmt.Printf("Heartbeat Interval: %d seconds\n", cfg.HeartbeatInterval)
+				
+				// Show installation info if available
+				if cfg.Installation.InstalledAt != "" {
+					fmt.Printf("\nInstallation Info:\n")
+					fmt.Printf("  Method: %s\n", cfg.Installation.Method)
+					fmt.Printf("  Installed At: %s\n", cfg.Installation.InstalledAt)
+					fmt.Printf("  Version: %s\n", cfg.Installation.Version)
+				}
+				
+				// Check service status on Windows
+				if runtime.GOOS == "windows" {
+					fmt.Printf("\nService Status: ")
+					if isServiceRunning() {
+						fmt.Printf("✅ RUNNING\n")
+					} else {
+						fmt.Printf("❌ STOPPED\n")
+					}
+				}
+			} else {
+				fmt.Printf("Status: ❌ NOT PAIRED\n")
+				fmt.Printf("Server URL: %s\n", cfg.ServerURL)
+				fmt.Println("\nTo pair this bridge, run:")
+				fmt.Println("  gym-door-bridge pair YOUR_PAIR_CODE")
+			}
+		},
+	}
+
+	rootCmd.AddCommand(pairCmd)
+	rootCmd.AddCommand(unpairCmd)
+	rootCmd.AddCommand(statusCmd)
+}
+// 
+restartWindowsService restarts the Windows service
+func restartWindowsService() error {
+	if runtime.GOOS != "windows" {
+		return fmt.Errorf("not running on Windows")
+	}
+	
+	// Stop service
+	stopCmd := exec.Command("net", "stop", "GymDoorBridge")
+	if err := stopCmd.Run(); err != nil {
+		// Service might not be running, continue
+	}
+	
+	// Start service
+	startCmd := exec.Command("net", "start", "GymDoorBridge")
+	return startCmd.Run()
+}
+
+// isServiceRunning checks if the Windows service is running
+func isServiceRunning() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	
+	cmd := exec.Command("sc", "query", "GymDoorBridge")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	
+	// Check if service is running
+	return string(output) != "" && 
+		   (string(output) != "" && 
+		    (len(output) > 0))
 }

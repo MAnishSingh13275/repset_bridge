@@ -140,7 +140,7 @@ docker-run: ## Run Docker container
 	@echo "$(GREEN)[DOCKER]$(NC) Running Docker container"
 	docker run --rm -it \
 		-p 8080:8080 \
-		-v $(PWD)/config.yaml.example:/app/config/config.yaml:ro \
+		-v $(PWD)/examples/config-template.yaml:/app/config/config.yaml:ro \
 		$(DOCKER_IMAGE):$(DOCKER_TAG)
 
 docker-push: ## Push Docker image to registry
@@ -196,12 +196,12 @@ serve-docs: ## Serve documentation locally (requires Python)
 # Development targets
 dev: ## Run in development mode
 	@echo "$(GREEN)[DEV]$(NC) Running in development mode"
-	$(GOCMD) run ./cmd --config config.yaml.example --log-level debug
+	$(GOCMD) run ./cmd --config examples/config-template.yaml --log-level debug
 
 dev-watch: ## Run with file watching (requires entr)
 	@echo "$(GREEN)[DEV]$(NC) Running with file watching"
 	@if command -v entr >/dev/null 2>&1; then \
-		find . -name "*.go" | entr -r $(GOCMD) run ./cmd --config config.yaml.example --log-level debug; \
+		find . -name "*.go" | entr -r $(GOCMD) run ./cmd --config examples/config-template.yaml --log-level debug; \
 	else \
 		echo "$(RED)[ERROR]$(NC) entr not found. Install with: brew install entr (macOS) or apt-get install entr (Linux)"; \
 	fi
@@ -267,14 +267,14 @@ bench: ## Run benchmarks
 # Profile targets
 profile-cpu: ## Generate CPU profile
 	@echo "$(GREEN)[PROFILE]$(NC) Generating CPU profile"
-	$(GOCMD) run ./cmd --profile-cpu cpu.prof --config config.yaml.example &
+	$(GOCMD) run ./cmd --profile-cpu cpu.prof --config examples/config-template.yaml &
 	@sleep 30
 	@pkill $(PROJECT_NAME) || true
 	@echo "$(GREEN)[PROFILE]$(NC) CPU profile saved to cpu.prof"
 
 profile-memory: ## Generate memory profile
 	@echo "$(GREEN)[PROFILE]$(NC) Generating memory profile"
-	$(GOCMD) run ./cmd --profile-memory memory.prof --config config.yaml.example &
+	$(GOCMD) run ./cmd --profile-memory memory.prof --config examples/config-template.yaml &
 	@sleep 30
 	@pkill $(PROJECT_NAME) || true
 	@echo "$(GREEN)[PROFILE]$(NC) Memory profile saved to memory.prof"

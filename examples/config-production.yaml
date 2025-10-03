@@ -1,5 +1,11 @@
 # Production Configuration Example
 # Configuration for production deployment with Repset SaaS platform
+#
+# SECURITY WARNING: 
+# - Replace all placeholder credentials with actual values
+# - Change default device passwords before production use
+# - Never commit real credentials to version control
+# - Review all security settings before deployment
 
 # Device configuration (set during pairing process)
 device:
@@ -46,7 +52,7 @@ adapter_configs:
     device_config:
       ip: "192.168.1.100"
       port: "4370"
-      comm_password: "0"
+      comm_password: "0"  # Change from default if device password was modified
       timeout: "10s"
     sync_interval: 30
     retry_attempts: 3
@@ -59,8 +65,8 @@ adapter_configs:
     device_config:
       ip: "192.168.1.101"
       port: "80"
-      username: "admin"
-      password: "admin"
+      username: "YOUR_DEVICE_USERNAME"  # Change from default
+      password: "YOUR_DEVICE_PASSWORD"  # Change from default
       timeout: "10s"
     sync_interval: 30
     retry_attempts: 3

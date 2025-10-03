@@ -19,13 +19,13 @@ Complete documentation is available in the [`docs/`](docs/) directory:
 **🚀 One-Click Smart Web Install:**
 ```powershell
 # Run PowerShell as Administrator, then:
-iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/public/install-bridge.ps1).Content
 ```
 ⭐ **NEW**: Includes smart pairing with automatic unpair/re-pair capability!
 
 **📦 Download & Install:**
-1. Download: [gym-door-bridge-windows.zip](https://github.com/MAnishSingh13275/repset_bridge/releases/latest)
-2. Extract and run `install.bat` as Administrator
+1. Download: [gym-door-bridge-windows.zip](https://github.com/your-org/gym-door-bridge/releases/latest)
+2. Extract and run PowerShell as Administrator, then run `scripts\install.ps1`
 
 ### For Developers
 
@@ -73,13 +73,12 @@ gym-door-bridge/
 │   ├── development/      # Development documentation
 │   ├── operations/       # Deployment and troubleshooting
 │   └── testing/          # Testing documentation
-├── examples/              # Configuration and usage examples
+├── examples/              # Configuration examples and templates
 ├── scripts/               # Build and deployment scripts
 ├── test/                  # Comprehensive test suite
 ├── build/                 # Build artifacts (generated)
 ├── data/                  # Runtime data (generated)
 ├── logs/                  # Log files (generated)
-├── config.yaml.example   # Example configuration file
 ├── CONTRIBUTING.md        # Development guidelines
 ├── CHANGELOG.md           # Version history
 ├── LICENSE                # MIT License

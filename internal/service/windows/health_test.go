@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/windows/svc"
 )
 
 func TestServiceHealthMonitor(t *testing.T) {
@@ -72,13 +73,13 @@ func TestServiceHealthInfo(t *testing.T) {
 
 	t.Run("TranslateServiceState", func(t *testing.T) {
 		testCases := []struct {
-			state    uint32
+			state    svc.State
 			expected string
 		}{
-			{1, "Stopped"},
-			{2, "Starting"},
-			{3, "Stopping"},
-			{4, "Running"},
+			{svc.Stopped, "Stopped"},
+			{svc.StartPending, "Starting"},
+			{svc.StopPending, "Stopping"},
+			{svc.Running, "Running"},
 		}
 
 		for _, tc := range testCases {

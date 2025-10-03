@@ -1,33 +1,50 @@
 # Comprehensive Test Suite
 
-This directory contains comprehensive tests for the Gym Door Bridge system, covering integration, load, security, and end-to-end testing scenarios.
+This directory contains comprehensive tests for the Gym Door Bridge system, covering Go-based tests and PowerShell-based installation/validation tests.
 
 ## Test Categories
 
-### Integration Tests (`integration/`)
+### Go Tests
+
+#### Integration Tests (`integration/`)
 - Complete hardware-to-cloud flow testing
 - Multi-component interaction validation
 - Real database and network simulation
 
-### Load Tests (`load/`)
+#### Load Tests (`load/`)
 - Performance tier validation (Lite/Normal/Full)
 - Queue capacity and throughput testing
 - Resource constraint simulation
 
-### Security Tests (`security/`)
+#### Security Tests (`security/`)
 - HMAC authentication flow validation
 - Key rotation and device pairing security
 - Attack scenario simulation
 
-### End-to-End Tests (`e2e/`)
+#### End-to-End Tests (`e2e/`)
 - Real deployment scenario simulation
 - Installation and configuration testing
 - Failure recovery and resilience testing
 
+### PowerShell Tests (`powershell/`)
+
+#### Installation Tests (`powershell/installation-tests/`)
+- Unit tests for PowerShell installation functions
+- Integration tests for complete installation workflows
+- Security tests for signature validation and tampering detection
+- Mock configurations for testing various system scenarios
+
+#### Validation Tests (`powershell/validation-tests/`)
+- Cross-platform compatibility validation
+- Deployment readiness validation
+- Complete workflow integration testing
+- End-to-end integration validation
+
 ## Running Tests
 
+### Go Tests
 ```bash
-# Run all comprehensive tests
+# Run all Go tests
 go test ./test/... -v
 
 # Run specific test categories
@@ -41,6 +58,21 @@ go test ./test/... -race -v
 
 # Run with coverage
 go test ./test/... -cover -v
+```
+
+### PowerShell Tests
+```powershell
+# Run installation tests
+cd test\powershell\installation-tests
+.\Run-AllTests.ps1
+
+# Run validation tests
+cd test\powershell\validation-tests
+.\Execute-Complete-Integration.ps1
+
+# Run specific test categories
+.\Cross-Platform-Validator.ps1
+.\Deployment-Readiness-Validator.ps1
 ```
 
 ## Test Requirements Coverage

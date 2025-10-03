@@ -565,7 +565,7 @@ if (Test-Path $backupPath) {
 ### Support Channels
 
 - **Documentation:** [Bridge Installation Guide](./README.md)
-- **GitHub Issues:** [RepSet Bridge Repository](https://github.com/MAnishSingh13275/repset_bridge/issues)
+- **GitHub Issues:** [RepSet Bridge Repository](https://github.com/your-org/gym-door-bridge/issues)
 - **Email Support:** bridge-support@repset.com
 - **Emergency Support:** For critical production issues
 

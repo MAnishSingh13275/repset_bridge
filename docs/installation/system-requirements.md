@@ -323,7 +323,7 @@ Test-NetConnection -ComputerName api.repset.com -Port 443 -InformationLevel Deta
 ### Technical Support
 - **Email:** bridge-support@repset.com
 - **Documentation:** https://docs.repset.com/bridge
-- **GitHub Issues:** https://github.com/MAnishSingh13275/repset_bridge/issues
+- **GitHub Issues:** https://github.com/your-org/gym-door-bridge/issues
 
 ### Community Resources
 - **User Forum:** https://community.repset.com

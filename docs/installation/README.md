@@ -18,7 +18,7 @@ This guide walks you through installing the RepSet Bridge as a Windows service w
 **One-Click Smart Install:**
 ```powershell
 # Run PowerShell as Administrator, then:
-iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/web-install.ps1).Content
+iex (iwr -useb https://raw.githubusercontent.com/your-org/gym-door-bridge/main/public/install-bridge.ps1).Content
 ```
 
 **Enhanced Features:**
@@ -40,9 +40,9 @@ iex (iwr -useb https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/
    ```
 
 2. **Install as Service**
-   ```cmd
-   # Right-click and "Run as Administrator"
-   install.bat
+   ```powershell
+   # Run PowerShell as Administrator, then:
+   .\scripts\install.ps1
    ```
 
 That's it! The service will automatically:
@@ -346,7 +346,7 @@ If you encounter issues:
 
 ### 🆘 Getting Help
 - **Email Support:** bridge-support@repset.com
-- **GitHub Issues:** [Report bugs or request features](https://github.com/MAnishSingh13275/repset_bridge/issues)
+- **GitHub Issues:** [Report bugs or request features](https://github.com/your-org/gym-door-bridge/issues)
 - **Community Forum:** https://community.repset.com
 - **Video Tutorials:** https://docs.repset.com/bridge/videos
 

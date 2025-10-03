@@ -14,7 +14,7 @@ The RepSet Bridge is a Windows service that connects your gym's biometric access
 
 2. **Run the installer command**
    ```powershell
-   Invoke-Expression "& {$(Invoke-RestMethod 'https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/simple-repset-installer.ps1')} -PairCode 'YOUR_PAIR_CODE'"
+   Invoke-Expression "& {$(Invoke-RestMethod 'https://raw.githubusercontent.com/your-org/gym-door-bridge/main/public/install-bridge.ps1')} -PairCode 'YOUR_PAIR_CODE'"
    ```
    
    **Replace `YOUR_PAIR_CODE`** with the actual pairing code from your RepSet admin dashboard.
@@ -27,7 +27,7 @@ The RepSet Bridge is a Windows service that connects your gym's biometric access
 4. **Service Setup (if needed)**
    If the service creation fails, run this additional command as Administrator:
    ```powershell
-   Invoke-Expression "& {$(Invoke-RestMethod 'https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/service-setup.ps1')}"
+   Invoke-Expression "& {$(Invoke-RestMethod 'https://raw.githubusercontent.com/your-org/gym-door-bridge/main/scripts/install.ps1')}"
    ```
 
 ## What Gets Installed
@@ -51,7 +51,7 @@ If the automated installer doesn't work, follow these manual steps:
 
 ### 1. Download Bridge
 
-1. Go to [GitHub Releases](https://github.com/MAnishSingh13275/repset_bridge/releases)
+1. Go to [GitHub Releases](https://github.com/your-org/gym-door-bridge/releases)
 2. Download the latest `GymDoorBridge-v*.zip` file
 3. Extract to `C:\Program Files\GymDoorBridge\`
 
@@ -279,5 +279,5 @@ Remove-Item "%USERPROFILE%\Documents\bridge.log"
 ## Version Information
 
 - **Current Version**: v1.3.0
-- **Release Notes**: [GitHub Releases](https://github.com/MAnishSingh13275/repset_bridge/releases)
+- **Release Notes**: [GitHub Releases](https://github.com/your-org/gym-door-bridge/releases)
 - **Update Method**: Re-run installer with new version

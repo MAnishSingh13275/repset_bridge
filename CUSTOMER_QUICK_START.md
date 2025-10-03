@@ -18,7 +18,7 @@ Open PowerShell and run:
 
 ```powershell
 cd "C:\Program Files\GymDoorBridge"
-.\bridge-support-tool.ps1 -Action status
+.\gym-door-bridge.exe status
 ```
 
 ### Common Solutions
@@ -26,19 +26,19 @@ cd "C:\Program Files\GymDoorBridge"
 **Bridge Not Showing as Active?**
 
 ```powershell
-.\bridge-support-tool.ps1 -Action start
+Start-Service -Name "GymDoorBridge"
 ```
 
 **Need to Restart the Bridge?**
 
 ```powershell
-.\bridge-support-tool.ps1 -Action restart
+Restart-Service -Name "GymDoorBridge"
 ```
 
 **View Recent Logs?**
 
 ```powershell
-.\bridge-support-tool.ps1 -Action logs
+Get-Content "%USERPROFILE%\Documents\bridge.log" -Tail 20
 ```
 
 ### Manual Start (if needed)
@@ -59,7 +59,7 @@ If you need assistance:
 1. **Run Diagnostics**:
 
    ```powershell
-   .\bridge-support-tool.ps1 -Action test
+   .\gym-door-bridge.exe status
    ```
 
 2. **Contact Support** with the diagnostic output
@@ -71,7 +71,7 @@ If you need assistance:
 - **Bridge Program**: `C:\Program Files\GymDoorBridge\`
 - **Configuration**: `C:\Users\[USERNAME]\Documents\repset-bridge-config.yaml`
 - **Logs**: `C:\Users\[USERNAME]\Documents\bridge.log`
-- **Support Tool**: `C:\Program Files\GymDoorBridge\bridge-support-tool.ps1`
+- **Main Executable**: `C:\Program Files\GymDoorBridge\gym-door-bridge.exe`
 
 ## Your Bridge Details
 
