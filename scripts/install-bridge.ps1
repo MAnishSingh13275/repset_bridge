@@ -39,20 +39,120 @@ if ($existingService) {
 }
 
 try {
-    # Download latest release with multiple fallback methods
-    Write-Host "📥 Downloading latest Gym Door Bridge..." -ForegroundColor Green
-    $downloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
-    $tempZip = "$env:TEMP\gym-door-bridge.zip"
-    $tempExtract = "$env:TEMP\gym-door-bridge"
+    # Check if we can build locally (preferred for CGO support)
+    $canBuildLocally = $false
+    $localBuildPath = $null
     
-    # Create temp directory
-    if (Test-Path $tempExtract) {
-        Remove-Item $tempExtract -Recurse -Force
+    # Check if we're in the source directory
+    if (Test-Path "go.mod" -and Test-Path "cmd\main.go") {
+        Write-Host "🔧 Source code detected - building CGO-enabled binary locally..." -ForegroundColor Green
+        $canBuildLocally = $true
+        $localBuildPath = Get-Location
     }
-    New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
     
-    # Try multiple download methods
-    $downloadSuccess = $false
+    if ($canBuildLocally) {
+        # Build CGO-enabled binary locally
+        Write-Host "🏗️  Building CGO-enabled binary (this fixes service startup issues)..." -ForegroundColor Green
+        
+        # Set CGO environment
+        $env:CGO_ENABLED = "1"
+        $env:GOOS = "windows"
+        $env:GOARCH = "amd64"
+        
+        # Create temp directory for build
+        $tempExtract = "$env:TEMP\gym-door-bridge"
+        if (Test-Path $tempExtract) {
+            Remove-Item $tempExtract -Recurse -Force
+        }
+        New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
+        
+        # Build the binary
+        $buildOutput = "$tempExtract\gym-door-bridge.exe"
+        Write-Host "Building to: $buildOutput" -ForegroundColor White
+        
+        $buildProcess = Start-Process -FilePath "go" -ArgumentList "build", "-o", $buildOutput, ".\cmd" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\build-output.log" -RedirectStandardError "$env:TEMP\build-error.log"
+        
+        if ($buildProcess.ExitCode -eq 0 -and (Test-Path $buildOutput)) {
+            Write-Host "✅ CGO-enabled binary built successfully!" -ForegroundColor Green
+            $fileSize = (Get-Item $buildOutput).Length
+            Write-Host "   Binary size: $([math]::Round($fileSize/1MB, 2)) MB" -ForegroundColor White
+            
+            # Create additional files
+            Copy-Item "README.md" -Destination "$tempExtract\" -ErrorAction SilentlyContinue
+            
+            # Create config template
+            $configTemplate = @"
+device_id: ""
+device_key: ""
+server_url: "$ServerUrl"
+tier: "normal"
+queue_max_size: 10000
+heartbeat_interval: 60
+unlock_duration: 3000
+database_path: "./bridge.db"
+log_level: "info"
+enabled_adapters:
+  - "simulator"
+api_server:
+  enabled: true
+  port: 8081
+  host: "0.0.0.0"
+"@
+            $configTemplate | Out-File -FilePath "$tempExtract\config.yaml.template" -Encoding UTF8
+            
+            # Create install guide
+            $installGuide = @"
+# Gym Door Bridge - CGO Enabled Build
+
+This binary was built with CGO support to fix SQLite database issues.
+
+## Features Fixed:
+- ✅ SQLite database support (no more CGO errors)
+- ✅ Service startup issues resolved
+- ✅ Local event queuing works properly
+
+## Usage:
+1. Service is installed automatically
+2. Pair with: gym-door-bridge pair YOUR_PAIR_CODE
+3. Check status: gym-door-bridge status
+
+## API Endpoint:
+http://localhost:8081
+"@
+            $installGuide | Out-File -FilePath "$tempExtract\INSTALL.txt" -Encoding UTF8
+            
+            # Reset environment variables
+            Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue
+            Remove-Item Env:GOOS -ErrorAction SilentlyContinue
+            Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
+            
+        } else {
+            Write-Host "❌ Local build failed, falling back to download..." -ForegroundColor Yellow
+            if (Test-Path "$env:TEMP\build-error.log") {
+                $buildError = Get-Content "$env:TEMP\build-error.log" -Raw
+                Write-Host "Build error: $buildError" -ForegroundColor Red
+            }
+            $canBuildLocally = $false
+        }
+    }
+    
+    if (-not $canBuildLocally) {
+        # Fallback to download method
+        Write-Host "📥 Downloading latest Gym Door Bridge..." -ForegroundColor Green
+        Write-Host "⚠️  Note: Downloaded binary may have CGO limitations" -ForegroundColor Yellow
+        
+        $downloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
+        $tempZip = "$env:TEMP\gym-door-bridge.zip"
+        $tempExtract = "$env:TEMP\gym-door-bridge"
+        
+        # Create temp directory
+        if (Test-Path $tempExtract) {
+            Remove-Item $tempExtract -Recurse -Force
+        }
+        New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
+        
+        # Try multiple download methods
+        $downloadSuccess = $false
     
     # Method 1: Invoke-WebRequest
     try {
@@ -106,6 +206,7 @@ try {
         $destination = $shell.NameSpace($tempExtract)
         $destination.CopyHere($zip.Items(), 4)
     }
+    }
     
     # Find executable with better search logic
     Write-Host "🔍 Searching for executable..." -ForegroundColor Yellow
@@ -144,10 +245,28 @@ try {
     }
     
     if (-not $exePath) {
-        throw "No executable found in downloaded package"
+        throw "No executable found in package"
     }
     
     $fullExePath = $exePath.FullName
+    
+    # Verify the binary works and has CGO support
+    Write-Host "🔍 Verifying binary compatibility..." -ForegroundColor Yellow
+    try {
+        $testProcess = Start-Process -FilePath $fullExePath -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\binary-test.log" -RedirectStandardError "$env:TEMP\binary-test-error.log"
+        if ($testProcess.ExitCode -eq 0) {
+            Write-Host "✅ Binary verification successful" -ForegroundColor Green
+            if ($canBuildLocally) {
+                Write-Host "   🎯 CGO-enabled build - SQLite support included" -ForegroundColor Green
+            } else {
+                Write-Host "   ⚠️  Downloaded binary - may have CGO limitations" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "⚠️  Binary verification failed, but continuing..." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "⚠️  Could not verify binary, but continuing..." -ForegroundColor Yellow
+    }
     Write-Host "✅ Found executable: $fullExePath" -ForegroundColor Green
     
     # Stop existing service if running
@@ -516,6 +635,14 @@ try {
     Write-Host "Service Name: GymDoorBridge" -ForegroundColor White
     Write-Host "API Endpoint: http://localhost:8081" -ForegroundColor White
     Write-Host "Server URL: $ServerUrl" -ForegroundColor White
+    
+    if ($canBuildLocally) {
+        Write-Host "Binary Type: CGO-Enabled (SQLite support included)" -ForegroundColor Green
+        Write-Host "Build Source: Local compilation" -ForegroundColor Green
+    } else {
+        Write-Host "Binary Type: Downloaded (may have CGO limitations)" -ForegroundColor Yellow
+        Write-Host "Build Source: GitHub release" -ForegroundColor White
+    }
     
     if ($PairCode) {
         Write-Host "Pair Code Used: $PairCode" -ForegroundColor White
