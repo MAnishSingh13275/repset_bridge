@@ -44,7 +44,7 @@ try {
     $localBuildPath = $null
     
     # Check if we're in the source directory
-    if (Test-Path "go.mod" -and Test-Path "cmd\main.go") {
+    if ((Test-Path "go.mod") -and (Test-Path "cmd\main.go")) {
         Write-Host "🔧 Source code detected - building CGO-enabled binary locally..." -ForegroundColor Green
         $canBuildLocally = $true
         $localBuildPath = Get-Location
@@ -72,7 +72,7 @@ try {
         
         $buildProcess = Start-Process -FilePath "go" -ArgumentList "build", "-o", $buildOutput, ".\cmd" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\build-output.log" -RedirectStandardError "$env:TEMP\build-error.log"
         
-        if ($buildProcess.ExitCode -eq 0 -and (Test-Path $buildOutput)) {
+        if (($buildProcess.ExitCode -eq 0) -and (Test-Path $buildOutput)) {
             Write-Host "✅ CGO-enabled binary built successfully!" -ForegroundColor Green
             $fileSize = (Get-Item $buildOutput).Length
             Write-Host "   Binary size: $([math]::Round($fileSize/1MB, 2)) MB" -ForegroundColor White
@@ -283,7 +283,7 @@ http://localhost:8081
             do {
                 Start-Sleep -Seconds 1
                 $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
-            } while ($service.Status -eq "Running" -and $stopWatch.Elapsed.TotalSeconds -lt $stopTimeout)
+            } while (($service.Status -eq "Running") -and ($stopWatch.Elapsed.TotalSeconds -lt $stopTimeout))
             
             $stopWatch.Stop()
             
@@ -660,14 +660,14 @@ http://localhost:8081
     
     # Final status check
     $finalService = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
-    if ($finalService -and $finalService.Status -eq "Running") {
+    if ($finalService -and ($finalService.Status -eq "Running")) {
         Write-Host "`n🎉 Gym Door Bridge is now installed and running!" -ForegroundColor Green
         
         # Check if paired
         $configPath = "$InstallPath\config.yaml"
         if (Test-Path $configPath) {
             $configContent = Get-Content $configPath -Raw
-            if ($configContent -match 'device_id:\s*"([^"]+)"' -and $matches[1] -ne "") {
+            if (($configContent -match 'device_id:\s*"([^"]+)"') -and ($matches[1] -ne "")) {
                 Write-Host "✅ Device is paired and ready!" -ForegroundColor Green
             } else {
                 Write-Host "⚠️  Device is not paired yet. Use: gym-door-bridge pair YOUR_CODE" -ForegroundColor Yellow
