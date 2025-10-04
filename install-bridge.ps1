@@ -310,15 +310,12 @@ try {
         Write-Host "⚠️  Service not found after installation" -ForegroundColor Yellow
     }
     
-    # Pair device if pair code provided
+    # Pair device if pair code provided - do this AFTER service installation
     if ($PairCode) {
         Write-Host "🔗 Pairing device with platform..." -ForegroundColor Green
         
-        # First, try to unpair if already paired (for re-pairing scenarios)
+        # Use the installed executable for pairing
         $pairExePath = "$InstallPath\gym-door-bridge.exe"
-        if (-not (Test-Path $pairExePath)) {
-            $pairExePath = $fullExePath
-        }
         
         # Always try to unpair first to ensure clean pairing
         Write-Host "🔄 Ensuring clean pairing state..." -ForegroundColor Yellow
@@ -333,39 +330,55 @@ try {
             Write-Host "ℹ️  No existing pairing to clear" -ForegroundColor White
         }
         
+        # Wait a moment for any file locks to clear
+        Start-Sleep -Seconds 2
+        
         try {
-            $pairExePath = "$InstallPath\gym-door-bridge.exe"
-            if (-not (Test-Path $pairExePath)) {
-                # Try to find the executable in the temp location
-                $pairExePath = $fullExePath
-            }
-            
+            Write-Host "🔗 Attempting to pair with code: $PairCode" -ForegroundColor Yellow
             $pairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\pair-output.log" -RedirectStandardError "$env:TEMP\pair-error.log"
             
             if ($pairProcess.ExitCode -eq 0) {
                 Write-Host "✅ Device paired successfully!" -ForegroundColor Green
                 
-                # Verify pairing by checking config
+                # Verify pairing by checking config for device_id
+                Start-Sleep -Seconds 1
                 $configPath = "$InstallPath\config.yaml"
                 if (Test-Path $configPath) {
                     $configContent = Get-Content $configPath -Raw
-                    if ($configContent -match 'device_id:\s*"([^"]+)"') {
-                        Write-Host "Device ID: $($matches[1])" -ForegroundColor White
+                    if ($configContent -match 'device_id:\s*"([^"]+)"' -and $matches[1] -ne "") {
+                        Write-Host "✅ Device ID confirmed: $($matches[1])" -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️  Warning: Device ID not found in config after pairing" -ForegroundColor Yellow
+                        Write-Host "Config content preview:" -ForegroundColor Yellow
+                        $configContent -split "`n" | Select-Object -First 10 | ForEach-Object { Write-Host "  $_" -ForegroundColor White }
                     }
                 }
             } else {
                 $errorOutput = ""
+                $standardOutput = ""
+                
                 if (Test-Path "$env:TEMP\pair-error.log") {
                     $errorOutput = Get-Content "$env:TEMP\pair-error.log" -Raw
                 }
+                if (Test-Path "$env:TEMP\pair-output.log") {
+                    $standardOutput = Get-Content "$env:TEMP\pair-output.log" -Raw
+                }
+                
+                Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
+                if ($errorOutput) {
+                    Write-Host "Error output: $errorOutput" -ForegroundColor Yellow
+                }
+                if ($standardOutput) {
+                    Write-Host "Standard output: $standardOutput" -ForegroundColor Yellow
+                }
                 
                 # Check if it's an "already paired" error and try to handle it
-                if ($errorOutput -and $errorOutput -match "already paired") {
+                if (($errorOutput -and $errorOutput -match "already paired") -or ($standardOutput -and $standardOutput -match "already paired")) {
                     Write-Host "🔄 Device reports already paired, attempting force re-pair..." -ForegroundColor Yellow
                     
                     # Try unpair again with more force
                     $forceUnpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow
-                    Start-Sleep -Seconds 2
+                    Start-Sleep -Seconds 3
                     
                     # Try pairing again
                     $retryPairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow
@@ -373,21 +386,18 @@ try {
                         Write-Host "✅ Device paired successfully on retry!" -ForegroundColor Green
                     } else {
                         Write-Host "⚠️  Retry pairing also failed" -ForegroundColor Yellow
-                        Write-Host "You can pair manually later using:" -ForegroundColor Yellow
-                        Write-Host "   gym-door-bridge unpair && gym-door-bridge pair $PairCode" -ForegroundColor White
+                        Write-Host "Manual pairing command:" -ForegroundColor Yellow
+                        Write-Host "   gym-door-bridge unpair" -ForegroundColor White
+                        Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
                     }
                 } else {
-                    Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
-                    if ($errorOutput) {
-                        Write-Host "Error details: $errorOutput" -ForegroundColor Yellow
-                    }
-                    Write-Host "You can pair manually later using:" -ForegroundColor Yellow
+                    Write-Host "Manual pairing command:" -ForegroundColor Yellow
                     Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
                 }
             }
         } catch {
             Write-Host "⚠️  Pairing error: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "You can pair manually later using:" -ForegroundColor Yellow
+            Write-Host "Manual pairing command:" -ForegroundColor Yellow
             Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
         }
     }
@@ -413,17 +423,55 @@ try {
             }
         } else {
             Write-Host "⚠️  Service installed but not running. Starting now..." -ForegroundColor Yellow
+            
+            # Before starting, verify the device is properly paired
+            $configPath = "$InstallPath\config.yaml"
+            $devicePaired = $false
+            if (Test-Path $configPath) {
+                $configContent = Get-Content $configPath -Raw
+                if ($configContent -match 'device_id:\s*"([^"]+)"' -and $matches[1] -ne "") {
+                    $devicePaired = $true
+                    Write-Host "✅ Device pairing verified (ID: $($matches[1]))" -ForegroundColor Green
+                } else {
+                    Write-Host "⚠️  Warning: Device not properly paired - service may fail to start" -ForegroundColor Yellow
+                    if ($PairCode) {
+                        Write-Host "⚠️  Try manual pairing: gym-door-bridge pair $PairCode" -ForegroundColor Yellow
+                    }
+                }
+            }
+            
             try {
                 Start-Service -Name "GymDoorBridge"
-                Start-Sleep -Seconds 3
+                Start-Sleep -Seconds 5  # Give it more time to start
                 $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
                 if ($service.Status -eq "Running") {
                     Write-Host "✅ Service started successfully!" -ForegroundColor Green
+                    
+                    # Test API endpoint
+                    try {
+                        Start-Sleep -Seconds 2
+                        $apiResponse = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 10
+                        Write-Host "✅ API is responding: HTTP $($apiResponse.StatusCode)" -ForegroundColor Green
+                    } catch {
+                        Write-Host "⚠️  API not responding yet (this is normal, may take a moment to start)" -ForegroundColor Yellow
+                    }
                 } else {
                     Write-Host "⚠️  Service failed to start. Status: $($service.Status)" -ForegroundColor Yellow
+                    if (-not $devicePaired) {
+                        Write-Host "💡 This is likely because the device is not properly paired." -ForegroundColor Yellow
+                        if ($PairCode) {
+                            Write-Host "💡 Try running: gym-door-bridge pair $PairCode" -ForegroundColor Yellow
+                        }
+                    }
                 }
             } catch {
                 Write-Host "❌ Failed to start service: $($_.Exception.Message)" -ForegroundColor Red
+                if (-not $devicePaired) {
+                    Write-Host "💡 This is likely because the device is not properly paired." -ForegroundColor Yellow
+                    if ($PairCode) {
+                        Write-Host "💡 Try running: gym-door-bridge pair $PairCode" -ForegroundColor Yellow
+                    }
+                }
             }
         }
     } else {
