@@ -185,18 +185,34 @@ try {
             try {
                 $existingExePath = "$InstallPath\gym-door-bridge.exe"
                 if (Test-Path $existingExePath) {
-                    $uninstallProcess = Start-Process -FilePath $existingExePath -ArgumentList "uninstall" -Wait -PassThru -NoNewWindow
+                    Write-Host "Uninstalling existing service..." -ForegroundColor White
+                    $uninstallProcess = Start-Process -FilePath $existingExePath -ArgumentList "uninstall" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\uninstall-output.log" -RedirectStandardError "$env:TEMP\uninstall-error.log"
+                    
                     if ($uninstallProcess.ExitCode -eq 0) {
                         Write-Host "✅ Existing service uninstalled" -ForegroundColor Green
                     } else {
                         Write-Host "⚠️  Service uninstall returned exit code $($uninstallProcess.ExitCode)" -ForegroundColor Yellow
+                        
+                        # Show uninstall errors if any
+                        if (Test-Path "$env:TEMP\uninstall-error.log") {
+                            $uninstallError = Get-Content "$env:TEMP\uninstall-error.log" -Raw
+                            if ($uninstallError) {
+                                Write-Host "Uninstall details: $uninstallError" -ForegroundColor Yellow
+                            }
+                        }
                     }
                     
-                    # Wait a moment for the service to be fully removed
-                    Start-Sleep -Seconds 3
+                    # Wait longer for the service to be fully removed and files to be unlocked
+                    Write-Host "Waiting for service cleanup..." -ForegroundColor White
+                    Start-Sleep -Seconds 5
+                    
+                    # Ensure all processes are stopped
+                    Get-Process -Name "gym-door-bridge*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 2
                 }
             } catch {
-                Write-Host "⚠️  Could not uninstall existing service, continuing..." -ForegroundColor Yellow
+                Write-Host "⚠️  Could not uninstall existing service: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "Continuing with installation..." -ForegroundColor White
             }
             
         } catch {
@@ -231,14 +247,32 @@ try {
             if (Test-Path $targetPath) {
                 Write-Host "⚠️  Target file exists, attempting to replace..." -ForegroundColor Yellow
                 
-                # Try to remove the existing file
-                for ($i = 0; $i -lt 5; $i++) {
+                # Stop any running processes that might be using the file
+                Get-Process -Name "gym-door-bridge*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 3
+                
+                # Try to remove the existing file with retry logic
+                $removed = $false
+                for ($i = 0; $i -lt 10; $i++) {
                     try {
-                        Remove-Item $targetPath -Force
+                        Remove-Item $targetPath -Force -ErrorAction Stop
+                        $removed = $true
                         break
                     } catch {
-                        Write-Host "⚠️  File in use, waiting... (attempt $($i+1)/5)" -ForegroundColor Yellow
+                        Write-Host "⚠️  File in use, waiting... (attempt $($i+1)/10)" -ForegroundColor Yellow
                         Start-Sleep -Seconds 2
+                    }
+                }
+                
+                if (-not $removed) {
+                    Write-Host "⚠️  Could not remove existing file, trying alternative approach..." -ForegroundColor Yellow
+                    # Try to rename the old file instead of deleting it
+                    try {
+                        $backupPath = "$targetPath.backup.$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+                        Move-Item $targetPath $backupPath -Force
+                        Write-Host "✅ Old file backed up to: $backupPath" -ForegroundColor Green
+                    } catch {
+                        throw "Cannot replace existing executable. Please stop the service manually and try again."
                     }
                 }
             }
@@ -274,6 +308,16 @@ try {
     if ($PairCode) {
         Write-Host "🔗 Pairing device with platform..." -ForegroundColor Green
         
+        # First, test server connectivity
+        Write-Host "🔍 Testing server connectivity..." -ForegroundColor Yellow
+        try {
+            $healthResponse = Invoke-WebRequest -Uri "$ServerUrl/api/v1/health" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            Write-Host "✅ Server is reachable (HTTP $($healthResponse.StatusCode))" -ForegroundColor Green
+        } catch {
+            Write-Host "⚠️  Server connectivity issue: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Pairing may fail. Check your internet connection and try again later." -ForegroundColor Yellow
+        }
+        
         # First, try to unpair if already paired (for re-pairing scenarios)
         $pairExePath = "$InstallPath\gym-door-bridge.exe"
         if (-not (Test-Path $pairExePath)) {
@@ -300,6 +344,7 @@ try {
                 $pairExePath = $fullExePath
             }
             
+            Write-Host "Attempting to pair with code: $PairCode" -ForegroundColor White
             $pairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\pair-output.log" -RedirectStandardError "$env:TEMP\pair-error.log"
             
             if ($pairProcess.ExitCode -eq 0) {
@@ -319,36 +364,47 @@ try {
                     $errorOutput = Get-Content "$env:TEMP\pair-error.log" -Raw
                 }
                 
-                # Check if it's an "already paired" error and try to handle it
-                if ($errorOutput -and $errorOutput -match "already paired") {
-                    Write-Host "🔄 Device reports already paired, attempting force re-pair..." -ForegroundColor Yellow
+                # Provide detailed error analysis
+                Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
+                
+                if ($errorOutput) {
+                    Write-Host "Error details: $errorOutput" -ForegroundColor Yellow
                     
-                    # Try unpair again with more force
-                    $forceUnpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow
-                    Start-Sleep -Seconds 2
-                    
-                    # Try pairing again
-                    $retryPairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow
-                    if ($retryPairProcess.ExitCode -eq 0) {
-                        Write-Host "✅ Device paired successfully on retry!" -ForegroundColor Green
-                    } else {
-                        Write-Host "⚠️  Retry pairing also failed" -ForegroundColor Yellow
-                        Write-Host "You can pair manually later using:" -ForegroundColor Yellow
-                        Write-Host "   gym-door-bridge unpair && gym-door-bridge pair $PairCode" -ForegroundColor White
+                    # Check for specific error patterns
+                    if ($errorOutput -match "HTTP error 500") {
+                        Write-Host "🔍 Server Error (500) - This indicates a server-side issue:" -ForegroundColor Red
+                        Write-Host "   • The pair code may be invalid or expired" -ForegroundColor White
+                        Write-Host "   • The server may be experiencing issues" -ForegroundColor White
+                        Write-Host "   • Try generating a new pair code from the admin portal" -ForegroundColor White
+                    } elseif ($errorOutput -match "already paired") {
+                        Write-Host "🔄 Device reports already paired, attempting force re-pair..." -ForegroundColor Yellow
+                        
+                        # Try unpair again with more force
+                        $forceUnpairProcess = Start-Process -FilePath $pairExePath -ArgumentList "unpair" -Wait -PassThru -NoNewWindow
+                        Start-Sleep -Seconds 2
+                        
+                        # Try pairing again
+                        $retryPairProcess = Start-Process -FilePath $pairExePath -ArgumentList "pair", $PairCode -Wait -PassThru -NoNewWindow
+                        if ($retryPairProcess.ExitCode -eq 0) {
+                            Write-Host "✅ Device paired successfully on retry!" -ForegroundColor Green
+                        } else {
+                            Write-Host "⚠️  Retry pairing also failed" -ForegroundColor Yellow
+                        }
+                    } elseif ($errorOutput -match "network\|connection\|timeout") {
+                        Write-Host "🌐 Network connectivity issue detected" -ForegroundColor Red
+                        Write-Host "   • Check your internet connection" -ForegroundColor White
+                        Write-Host "   • Verify firewall settings allow outbound HTTPS" -ForegroundColor White
+                        Write-Host "   • Try again in a few minutes" -ForegroundColor White
                     }
-                } else {
-                    Write-Host "⚠️  Pairing failed with exit code $($pairProcess.ExitCode)" -ForegroundColor Yellow
-                    if ($errorOutput) {
-                        Write-Host "Error details: $errorOutput" -ForegroundColor Yellow
-                    }
-                    Write-Host "You can pair manually later using:" -ForegroundColor Yellow
-                    Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
                 }
+                
+                Write-Host "`nYou can pair manually later using:" -ForegroundColor Yellow
+                Write-Host "gym-door-bridge pair $PairCode" -ForegroundColor White
             }
         } catch {
             Write-Host "⚠️  Pairing error: $($_.Exception.Message)" -ForegroundColor Yellow
             Write-Host "You can pair manually later using:" -ForegroundColor Yellow
-            Write-Host "   gym-door-bridge pair $PairCode" -ForegroundColor White
+            Write-Host "gym-door-bridge pair $PairCode" -ForegroundColor White
         }
     }
     
@@ -375,15 +431,78 @@ try {
             Write-Host "⚠️  Service installed but not running. Starting now..." -ForegroundColor Yellow
             try {
                 Start-Service -Name "GymDoorBridge"
-                Start-Sleep -Seconds 3
+                Start-Sleep -Seconds 5
                 $service = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
                 if ($service.Status -eq "Running") {
                     Write-Host "✅ Service started successfully!" -ForegroundColor Green
                 } else {
                     Write-Host "⚠️  Service failed to start. Status: $($service.Status)" -ForegroundColor Yellow
+                    
+                    # Provide detailed troubleshooting
+                    Write-Host "🔍 Troubleshooting service startup..." -ForegroundColor Yellow
+                    
+                    # Check if executable exists and is accessible
+                    $serviceExe = "$InstallPath\gym-door-bridge.exe"
+                    if (-not (Test-Path $serviceExe)) {
+                        Write-Host "❌ Service executable not found: $serviceExe" -ForegroundColor Red
+                    } else {
+                        Write-Host "✅ Service executable exists" -ForegroundColor Green
+                        
+                        # Try to run executable manually to check for errors
+                        try {
+                            Write-Host "Testing executable manually..." -ForegroundColor White
+                            $testProcess = Start-Process -FilePath $serviceExe -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\bridge-test.log" -RedirectStandardError "$env:TEMP\bridge-test-error.log"
+                            
+                            if ($testProcess.ExitCode -eq 0) {
+                                Write-Host "✅ Executable runs correctly" -ForegroundColor Green
+                            } else {
+                                Write-Host "❌ Executable has issues (exit code: $($testProcess.ExitCode))" -ForegroundColor Red
+                                if (Test-Path "$env:TEMP\bridge-test-error.log") {
+                                    $testError = Get-Content "$env:TEMP\bridge-test-error.log" -Raw
+                                    if ($testError) {
+                                        Write-Host "Error details: $testError" -ForegroundColor Red
+                                    }
+                                }
+                            }
+                        } catch {
+                            Write-Host "❌ Cannot run executable: $($_.Exception.Message)" -ForegroundColor Red
+                        }
+                    }
+                    
+                    # Check Windows Event Log for service errors
+                    try {
+                        $recentErrors = Get-WinEvent -FilterHashtable @{LogName='System'; Level=2; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue |
+                                       Where-Object { $_.Message -like "*GymDoorBridge*" } |
+                                       Select-Object -First 3
+                        
+                        if ($recentErrors) {
+                            Write-Host "Recent service errors from Event Log:" -ForegroundColor Red
+                            foreach ($error in $recentErrors) {
+                                Write-Host "  [$($error.TimeCreated)] $($error.Message)" -ForegroundColor Red
+                            }
+                        }
+                    } catch {
+                        Write-Host "Could not check Event Log for errors" -ForegroundColor Yellow
+                    }
+                    
+                    Write-Host "`n📋 Service Troubleshooting Steps:" -ForegroundColor Cyan
+                    Write-Host "1. Check Windows Event Viewer > System for detailed error messages" -ForegroundColor White
+                    Write-Host "2. Ensure the device is paired: gym-door-bridge pair $PairCode" -ForegroundColor White
+                    Write-Host "3. Try starting manually: net start GymDoorBridge" -ForegroundColor White
+                    Write-Host "4. Check config file: $InstallPath\config.yaml" -ForegroundColor White
                 }
             } catch {
                 Write-Host "❌ Failed to start service: $($_.Exception.Message)" -ForegroundColor Red
+                
+                # Check for specific error patterns
+                $errorMsg = $_.Exception.Message
+                if ($errorMsg -match "access.*denied|privilege") {
+                    Write-Host "🔒 Permission issue detected. Try running as Administrator." -ForegroundColor Yellow
+                } elseif ($errorMsg -match "service.*not.*found") {
+                    Write-Host "🔍 Service not properly installed. Try reinstalling." -ForegroundColor Yellow
+                } else {
+                    Write-Host "🔍 Check Windows Event Viewer for detailed error information." -ForegroundColor Yellow
+                }
             }
         }
     } else {
@@ -412,7 +531,25 @@ try {
     Write-Host "   net stop GymDoorBridge    - Stop service" -ForegroundColor White
     Write-Host "   net start GymDoorBridge   - Start service" -ForegroundColor White
     
-    Write-Host "`n🎉 Gym Door Bridge is now installed and running!" -ForegroundColor Green
+    # Final status check
+    $finalService = Get-Service -Name "GymDoorBridge" -ErrorAction SilentlyContinue
+    if ($finalService -and $finalService.Status -eq "Running") {
+        Write-Host "`n🎉 Gym Door Bridge is now installed and running!" -ForegroundColor Green
+        
+        # Check if paired
+        $configPath = "$InstallPath\config.yaml"
+        if (Test-Path $configPath) {
+            $configContent = Get-Content $configPath -Raw
+            if ($configContent -match 'device_id:\s*"([^"]+)"' -and $matches[1] -ne "") {
+                Write-Host "✅ Device is paired and ready!" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  Device is not paired yet. Use: gym-door-bridge pair YOUR_CODE" -ForegroundColor Yellow
+            }
+        }
+    } else {
+        Write-Host "`n⚠️  Installation completed but service needs attention" -ForegroundColor Yellow
+        Write-Host "Check the troubleshooting steps above or run 'net start GymDoorBridge'" -ForegroundColor White
+    }
     
 } catch {
     Write-Host "❌ Installation failed: $($_.Exception.Message)" -ForegroundColor Red
