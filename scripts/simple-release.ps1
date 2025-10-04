@@ -22,18 +22,22 @@ try {
     }
     New-Item -ItemType Directory -Path "build" -Force | Out-Null
 
-    # Build Windows executable
-    Write-Host "Building Windows executable..." -ForegroundColor Green
+    # Build Windows executable with CGO support
+    Write-Host "Building CGO-enabled Windows executable..." -ForegroundColor Green
     $env:GOOS = "windows"
     $env:GOARCH = "amd64"
-    $env:CGO_ENABLED = "0"
+    $env:CGO_ENABLED = "1"
     
+    # Build CGO-enabled binary (fixes SQLite issues)
     go build -ldflags "-s -w" -o "build/gym-door-bridge.exe" ./cmd
     
     if (-not (Test-Path "build/gym-door-bridge.exe")) {
-        throw "Build failed - executable not found"
+        throw "CGO build failed - executable not found"
     }
-    Write-Host "Build completed successfully" -ForegroundColor Green
+    
+    $fileSize = (Get-Item "build/gym-door-bridge.exe").Length
+    Write-Host "✅ CGO-enabled build completed: $([math]::Round($fileSize/1MB, 2)) MB" -ForegroundColor Green
+    Write-Host "   This build includes SQLite support and fixes service startup issues" -ForegroundColor Green
 
     # Copy additional files
     Copy-Item "README.md" -Destination "build/" -ErrorAction SilentlyContinue
@@ -96,6 +100,7 @@ API: http://localhost:8081
 
 ## Features
 - One-Click Installation with PowerShell
+- CGO-Enabled Binary (fixes SQLite database issues)
 - Auto-Discovery of biometric devices
 - Multi-Device Support (ZKTeco, ESSL, Realtime)
 - Secure Pairing with cloud platform
@@ -103,6 +108,12 @@ API: http://localhost:8081
 - Windows Service with auto-restart
 - REST API for remote control
 - Health Monitoring
+
+## Fixed in This Release
+- ✅ SQLite database support (CGO-enabled build)
+- ✅ Service startup issues resolved
+- ✅ Local event queuing works properly
+- ✅ No more "Binary was compiled with CGO_ENABLED=0" errors
 
 ## Installation
 Run PowerShell as Administrator:
