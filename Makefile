@@ -34,7 +34,7 @@ YELLOW := \033[1;33m
 RED := \033[0;31m
 NC := \033[0m # No Color
 
-.PHONY: help build build-all clean test test-coverage lint docker docker-build docker-run install uninstall release docs serve-docs
+.PHONY: help build build-all clean test test-coverage lint docker docker-build docker-run install uninstall package-windows package-macos package-all release docs serve-docs
 
 # Default target
 all: build
@@ -169,12 +169,87 @@ uninstall: ## Uninstall binary from system
 		echo "$(YELLOW)[WARN]$(NC) Manual uninstallation required on this platform"; \
 	fi
 
+# Package targets
+package-windows: build-windows ## Create Windows release package
+	@echo "$(GREEN)[PACKAGE]$(NC) Creating Windows release package"
+	@mkdir -p $(DIST_DIR)
+	@cp $(BUILD_DIR)/$(PROJECT_NAME)-windows-amd64.exe $(DIST_DIR)/$(PROJECT_NAME)-windows.exe
+	@cp QUICK_INSTALL.md $(DIST_DIR)/
+	@cp install-windows.ps1 $(DIST_DIR)/
+	@echo "# Gym Door Bridge - Windows Release" > $(DIST_DIR)/README-Windows.txt
+	@echo "" >> $(DIST_DIR)/README-Windows.txt
+	@echo "Version: $(VERSION)" >> $(DIST_DIR)/README-Windows.txt
+	@echo "Built: $(BUILD_TIME)" >> $(DIST_DIR)/README-Windows.txt
+	@echo "" >> $(DIST_DIR)/README-Windows.txt
+	@echo "QUICK INSTALL:" >> $(DIST_DIR)/README-Windows.txt
+	@echo "1. Right-click PowerShell and 'Run as administrator'" >> $(DIST_DIR)/README-Windows.txt
+	@echo "2. Run: .\\install-windows.ps1" >> $(DIST_DIR)/README-Windows.txt
+	@echo "3. Run: .\\gym-door-bridge-windows.exe pair YOUR_PAIR_CODE" >> $(DIST_DIR)/README-Windows.txt
+	@echo "" >> $(DIST_DIR)/README-Windows.txt
+	@echo "See QUICK_INSTALL.md for detailed instructions." >> $(DIST_DIR)/README-Windows.txt
+	@cd $(DIST_DIR) && zip -r $(PROJECT_NAME)-windows-$(VERSION).zip \
+		$(PROJECT_NAME)-windows.exe \
+		install-windows.ps1 \
+		QUICK_INSTALL.md \
+		README-Windows.txt
+	@echo "$(GREEN)[PACKAGE]$(NC) Windows package created: $(DIST_DIR)/$(PROJECT_NAME)-windows-$(VERSION).zip"
+
+package-macos: build-darwin ## Create macOS release package
+	@echo "$(GREEN)[PACKAGE]$(NC) Creating macOS release package"
+	@mkdir -p $(DIST_DIR)
+	@lipo -create -output $(DIST_DIR)/$(PROJECT_NAME)-macos \
+		$(BUILD_DIR)/$(PROJECT_NAME)-darwin-amd64 \
+		$(BUILD_DIR)/$(PROJECT_NAME)-darwin-arm64
+	@chmod +x $(DIST_DIR)/$(PROJECT_NAME)-macos
+	@cp QUICK_INSTALL.md $(DIST_DIR)/
+	@cp install-macos.sh $(DIST_DIR)/
+	@chmod +x $(DIST_DIR)/install-macos.sh
+	@echo "# Gym Door Bridge - macOS Release" > $(DIST_DIR)/README-macOS.txt
+	@echo "" >> $(DIST_DIR)/README-macOS.txt
+	@echo "Version: $(VERSION)" >> $(DIST_DIR)/README-macOS.txt
+	@echo "Built: $(BUILD_TIME)" >> $(DIST_DIR)/README-macOS.txt
+	@echo "" >> $(DIST_DIR)/README-macOS.txt
+	@echo "QUICK INSTALL:" >> $(DIST_DIR)/README-macOS.txt
+	@echo "1. chmod +x install-macos.sh" >> $(DIST_DIR)/README-macOS.txt
+	@echo "2. ./install-macos.sh" >> $(DIST_DIR)/README-macOS.txt
+	@echo "3. gym-door-bridge pair YOUR_PAIR_CODE" >> $(DIST_DIR)/README-macOS.txt
+	@echo "" >> $(DIST_DIR)/README-macOS.txt
+	@echo "See QUICK_INSTALL.md for detailed instructions." >> $(DIST_DIR)/README-macOS.txt
+	@cd $(DIST_DIR) && tar -czf $(PROJECT_NAME)-macos-$(VERSION).tar.gz \
+		$(PROJECT_NAME)-macos \
+		install-macos.sh \
+		QUICK_INSTALL.md \
+		README-macOS.txt
+	@echo "$(GREEN)[PACKAGE]$(NC) macOS package created: $(DIST_DIR)/$(PROJECT_NAME)-macos-$(VERSION).tar.gz"
+
+package-all: package-windows package-macos ## Create all release packages
+	@echo "$(GREEN)[PACKAGE]$(NC) All release packages created"
+	@ls -la $(DIST_DIR)/*.zip $(DIST_DIR)/*.tar.gz 2>/dev/null || true
+
 # Release targets
-release: clean build-all ## Build release artifacts
+release: clean package-all ## Build complete release with packages
 	@echo "$(GREEN)[RELEASE]$(NC) Creating release artifacts"
-	@chmod +x scripts/generate-manifest.sh
-	@./scripts/generate-manifest.sh
-	@echo "$(GREEN)[RELEASE]$(NC) Release $(VERSION) ready in $(DIST_DIR)/"
+	@if [ -f scripts/generate-manifest.sh ]; then \
+		chmod +x scripts/generate-manifest.sh; \
+		./scripts/generate-manifest.sh; \
+	fi
+	@echo ""
+	@echo "$(GREEN)📋 Release Summary$(NC)"
+	@echo "=================="
+	@echo "Version: $(VERSION)"
+	@echo "Build Time: $(BUILD_TIME)"
+	@echo "Git Commit: $(COMMIT_HASH)"
+	@echo ""
+	@echo "$(GREEN)📦 Packages Created:$(NC)"
+	@ls -la $(DIST_DIR)/*.zip $(DIST_DIR)/*.tar.gz 2>/dev/null || echo "No packages found"
+	@echo ""
+	@echo "$(GREEN)✅ Release $(VERSION) ready!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)🔗 Next Steps:$(NC)"
+	@echo "1. Test the packages on target platforms"
+	@echo "2. Upload to GitHub Releases"
+	@echo "3. Update installation documentation"
+	@echo "4. Announce the new version"
 
 release-docker: docker-build docker-push ## Build and push Docker release
 

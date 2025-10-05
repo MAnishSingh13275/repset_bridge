@@ -64,10 +64,12 @@ func init() {
 	// Add platform-specific service commands
 	if runtime.GOOS == "windows" {
 		windows.AddServiceCommands(rootCmd)
-		addWindowsInstallerCommands()
 	} else if runtime.GOOS == "darwin" {
 		macos.AddServiceCommands(rootCmd)
 	}
+	
+	// Add cross-platform installer commands
+	addCrossPlatformInstallerCommands()
 	
 	// Add pairing commands
 	addPairingCommands()
@@ -245,20 +247,21 @@ func bridgeMain(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-// addWindowsInstallerCommands adds Windows installer commands
-func addWindowsInstallerCommands() {
+// addCrossPlatformInstallerCommands adds cross-platform installer commands
+func addCrossPlatformInstallerCommands() {
 	var installCmd = &cobra.Command{
 		Use:   "install",
-		Short: "Install Gym Door Bridge as Windows service with auto-discovery",
-		Long: `Install the Gym Door Bridge as a Windows service. This command will:
+		Short: "Install Gym Door Bridge as a background service with auto-discovery",
+		Long: `Install the Gym Door Bridge as a background service. This command will:
 - Automatically discover biometric devices on the network
 - Generate configuration based on discovered devices
 - Install the service to run automatically at startup
-- Configure logging and database paths
+- Configure automatic restart on failure
+- Set up logging and database paths
 
-Requires administrator privileges.`,
+Requires administrator privileges on Windows or sudo on macOS.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			installer, err := installer.NewWindowsInstaller()
+			installer, err := installer.NewInstaller()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
 				os.Exit(1)
@@ -269,23 +272,25 @@ Requires administrator privileges.`,
 				os.Exit(1)
 			}
 
-			fmt.Println("Installation completed successfully!")
-			fmt.Println("The Gym Door Bridge service has been installed and started.")
-			fmt.Println("Use 'gym-door-bridge pair' to connect to your platform.")
+			fmt.Println("\n🎉 Installation completed successfully!")
+			fmt.Println("📋 Next steps:")
+			fmt.Println("   1. Get a pairing code from your gym management platform")
+			fmt.Println("   2. Run: gym-door-bridge pair YOUR_PAIR_CODE")
+			fmt.Println("   3. The service will run automatically in the background")
 		},
 	}
 
 	var uninstallCmd = &cobra.Command{
 		Use:   "uninstall",
-		Short: "Uninstall Gym Door Bridge Windows service",
-		Long: `Uninstall the Gym Door Bridge Windows service. This command will:
+		Short: "Uninstall Gym Door Bridge background service",
+		Long: `Uninstall the Gym Door Bridge background service. This command will:
 - Stop the running service
-- Remove the service from Windows
-- Clean up installation files and registry entries
+- Remove the service from the system
+- Clean up installation files and system entries
 
-Requires administrator privileges.`,
+Requires administrator privileges on Windows or sudo on macOS.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			installer, err := installer.NewWindowsInstaller()
+			installer, err := installer.NewInstaller()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
 				os.Exit(1)
@@ -296,12 +301,88 @@ Requires administrator privileges.`,
 				os.Exit(1)
 			}
 
-			fmt.Println("Uninstallation completed successfully!")
+			fmt.Println("✅ Uninstallation completed successfully!")
+		},
+	}
+
+	var startCmd = &cobra.Command{
+		Use:   "start",
+		Short: "Start the Gym Door Bridge background service",
+		Long:  `Start the Gym Door Bridge background service.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			installer, err := installer.NewInstaller()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := installer.Start(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to start service: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("✅ Service started successfully!")
+		},
+	}
+
+	var stopCmd = &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the Gym Door Bridge background service",
+		Long:  `Stop the Gym Door Bridge background service.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			installer, err := installer.NewInstaller()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := installer.Stop(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to stop service: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("✅ Service stopped successfully!")
+		},
+	}
+
+	var restartCmd = &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the Gym Door Bridge background service",
+		Long:  `Restart the Gym Door Bridge background service.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			installer, err := installer.NewInstaller()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create installer: %v\n", err)
+				os.Exit(1)
+			}
+
+			// Use the RestartService method if available, otherwise stop and start
+			if restarter, ok := installer.(interface{ RestartService() error }); ok {
+				if err := restarter.RestartService(); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to restart service: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				if err := installer.Stop(); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to stop service: %v\n", err)
+					os.Exit(1)
+				}
+				time.Sleep(2 * time.Second)
+				if err := installer.Start(); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to start service: %v\n", err)
+					os.Exit(1)
+				}
+			}
+
+			fmt.Println("✅ Service restarted successfully!")
 		},
 	}
 
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
+	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(restartCmd)
 }
 
 // addPairingCommands adds pairing-related commands
@@ -512,15 +593,26 @@ This removes the secure connection and device credentials.`,
 					fmt.Printf("  Version: %s\n", cfg.Installation.Version)
 				}
 				
-				// Check service status on Windows
-				if runtime.GOOS == "windows" {
-					fmt.Printf("\nService Status: ")
-					if isServiceRunning() {
+			// Check service status using installer
+			if installer, err := installer.NewInstaller(); err == nil {
+				fmt.Printf("\nService Status: ")
+				if status, err := installer.Status(); err == nil {
+					switch status {
+					case "Running":
 						fmt.Printf("✅ RUNNING\n")
-					} else {
+					case "Stopped":
 						fmt.Printf("❌ STOPPED\n")
+					case "Not Installed":
+						fmt.Printf("⚠️ NOT INSTALLED\n")
+						fmt.Printf("\nTo install the service, run:\n")
+						fmt.Printf("  gym-door-bridge install\n")
+					default:
+						fmt.Printf("🔄 %s\n", status)
 					}
+				} else {
+					fmt.Printf("❌ ERROR (%v)\n", err)
 				}
+			}
 			} else {
 				fmt.Printf("Status: ❌ NOT PAIRED\n")
 				fmt.Printf("Server URL: %s\n", cfg.ServerURL)
