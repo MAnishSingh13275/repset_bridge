@@ -1,5 +1,77 @@
-# Gym Door Bridge - Fixed Installation Script
-# Handles permissions, service configuration, and startup properly
+# Gym Door Bridge - Enhanced Installation Script
+# Handles permissions, service configuration, pairing, and startup properly
+# Version 1.1 - Enhanced with better error handling and validation
+
+# Helper function to test if bridge is properly configured
+function Test-BridgeConfiguration {
+    param(
+        [string]$ExePath,
+        [string]$ConfigPath
+    )
+    
+    try {
+        Write-Host "Testing bridge configuration..." -ForegroundColor Yellow
+        
+        # Test if bridge can load config without errors
+        $testArgs = @("status", "--config", "`"$ConfigPath`"")
+        $testResult = Start-Process -FilePath $ExePath -ArgumentList $testArgs -Wait -PassThru -NoNewWindow -WindowStyle Hidden
+        
+        if ($testResult.ExitCode -eq 0) {
+            Write-Host "✅ Bridge configuration test passed" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "⚠️  Bridge configuration test failed (exit code: $($testResult.ExitCode))" -ForegroundColor Yellow
+            return $false
+        }
+    } catch {
+        Write-Host "❌ Bridge configuration test error: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+# Helper function to check service health after startup
+function Wait-ForServiceHealth {
+    param(
+        [string]$ServiceName,
+        [int]$TimeoutSeconds = 120
+    )
+    
+    Write-Host "Waiting for service to become healthy..." -ForegroundColor Yellow
+    
+    $maxAttempts = [math]::Ceiling($TimeoutSeconds / 5)
+    $attempt = 0
+    
+    while ($attempt -lt $maxAttempts) {
+        $attempt++
+        Start-Sleep 5
+        
+        $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if (-not $svc) {
+            Write-Host "Service not found on attempt $attempt/$maxAttempts" -ForegroundColor Yellow
+            continue
+        }
+        
+        if ($svc.Status -eq "Running") {
+            # Test if API is responding
+            try {
+                $healthResponse = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+                if ($healthResponse.StatusCode -eq 200) {
+                    Write-Host "✅ Service is healthy and API is responding" -ForegroundColor Green
+                    return $true
+                }
+            } catch {
+                # API not ready yet, continue waiting
+            }
+            
+            Write-Host "Service running but API not ready yet... ($($attempt * 5)s)" -ForegroundColor Yellow
+        } else {
+            Write-Host "Service status: $($svc.Status) on attempt $attempt/$maxAttempts" -ForegroundColor Yellow
+        }
+    }
+    
+    Write-Host "⚠️  Service health check timed out after $TimeoutSeconds seconds" -ForegroundColor Yellow
+    return $false
+}
 
 param(
     [string]$PairCode = "",
@@ -51,6 +123,13 @@ try {
         & icacls $DataDir /grant "NT AUTHORITY\SYSTEM:(OI)(CI)F" /T | Out-Null
         & icacls $DataDir /grant "NT AUTHORITY\LOCAL SERVICE:(OI)(CI)F" /T | Out-Null
         & icacls $DataDir /grant "BUILTIN\Administrators:(OI)(CI)F" /T | Out-Null
+        
+        # Also ensure the credential storage directory has proper permissions
+        $credDir = Join-Path $DataDir "credentials"
+        New-Item -ItemType Directory -Force -Path $credDir | Out-Null
+        & icacls $credDir /grant "NT AUTHORITY\SYSTEM:(OI)(CI)F" /T | Out-Null
+        & icacls $credDir /grant "NT AUTHORITY\LOCAL SERVICE:(OI)(CI)F" /T | Out-Null
+        & icacls $credDir /grant "BUILTIN\Administrators:(OI)(CI)F" /T | Out-Null
         
         # Grant read/execute to Local Service on install directory
         & icacls $InstallPath /grant "NT AUTHORITY\LOCAL SERVICE:(OI)(CI)RX" /T | Out-Null
@@ -261,89 +340,138 @@ api_server:
         
         # Clean existing pairing
         Start-Process -FilePath $targetExe -ArgumentList "unpair" -Wait -NoNewWindow -ErrorAction SilentlyContinue | Out-Null
-        Start-Sleep 1
+        Start-Sleep 2
         
-        # Perform pairing
-        $pairResult = Start-Process -FilePath $targetExe -ArgumentList @("pair", $PairCode) -Wait -PassThru -NoNewWindow
+        # Perform pairing with proper argument format
+        $pairArguments = @("pair", $PairCode, "--config", "`"$configPath`"")
+        Write-Host "Running pairing command: $targetExe $($pairArguments -join ' ')" -ForegroundColor Yellow
+        
+        $pairResult = Start-Process -FilePath $targetExe -ArgumentList $pairArguments -Wait -PassThru -NoNewWindow
         if ($pairResult.ExitCode -eq 0) {
-            Write-Host "Device paired successfully!" -ForegroundColor Green
+            Write-Host "✅ Device paired successfully!" -ForegroundColor Green
+            
+            # Verify pairing and test configuration
+            Write-Host "Verifying pairing and testing configuration..." -ForegroundColor Yellow
+            
+            Start-Sleep 2  # Give time for credential storage
+            
+            $configTest = Test-BridgeConfiguration -ExePath $targetExe -ConfigPath $configPath
+            if ($configTest) {
+                Write-Host "✅ Pairing and configuration verification successful" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  Configuration test failed after pairing - service may have startup issues" -ForegroundColor Yellow
+            }
         } else {
-            Write-Host "WARNING: Pairing failed (exit code: $($pairResult.ExitCode))" -ForegroundColor Yellow
-            Write-Host "You can pair manually later with: gym-door-bridge pair $PairCode" -ForegroundColor Yellow
+            Write-Host "❌ Pairing failed (exit code: $($pairResult.ExitCode))" -ForegroundColor Red
+            Write-Host "You can pair manually later with: gym-door-bridge pair $PairCode --config `"$configPath`"" -ForegroundColor Yellow
+            
+            # Continue with service creation anyway, user can pair later
+            Write-Host "Continuing with service installation..." -ForegroundColor Yellow
         }
     }
 
-    # Start service with multiple attempts
+    # Start service with multiple attempts and better error handling
     Write-Host "Starting service..." -ForegroundColor Yellow
     
     $serviceStarted = $false
-    $maxAttempts = 3
+    $maxAttempts = 5  # Increased attempts
+    
+    # Wait a bit for service registration to complete
+    Start-Sleep 3
     
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         Write-Host "Start attempt $attempt/$maxAttempts..." -ForegroundColor Yellow
         
         try {
-            # Try starting with net command
-            $startResult = & net start $ServiceName 2>&1
-            Start-Sleep 5
-            
+            # First check if service exists and is not already running
             $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            if (-not $svc) {
+                Write-Host "Service $ServiceName not found, waiting for registration..." -ForegroundColor Yellow
+                Start-Sleep 5
+                continue
+            }
+            
             if ($svc.Status -eq "Running") {
+                Write-Host "Service is already running!" -ForegroundColor Green
                 $serviceStarted = $true
-                Write-Host "Service started successfully!" -ForegroundColor Green
+                break
+            }
+            
+            # Try starting with PowerShell Start-Service first
+            try {
+                Start-Service -Name $ServiceName -ErrorAction Stop
+                Write-Host "Service start command issued via PowerShell" -ForegroundColor Green
+            } catch {
+                Write-Host "PowerShell Start-Service failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                # Fallback to net command
+                $netResult = & net start $ServiceName 2>&1
+                Write-Host "net start result: $netResult" -ForegroundColor Gray
+            }
+            
+            # Wait for service to start and check multiple times
+            $waitAttempts = 0
+            $maxWaitAttempts = 12 # 60 seconds total
+            while ($waitAttempts -lt $maxWaitAttempts) {
+                Start-Sleep 5
+                $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+                if ($svc -and $svc.Status -eq "Running") {
+                    $serviceStarted = $true
+                    Write-Host "Service started successfully after $($waitAttempts * 5) seconds!" -ForegroundColor Green
+                    break
+                }
+                $waitAttempts++
+                Write-Host "Waiting for service to start... ($($waitAttempts * 5)s)" -ForegroundColor Yellow
+            }
+            
+            if ($serviceStarted) {
                 break
             } else {
-                Write-Host "Service status: $($svc.Status)" -ForegroundColor Yellow
-                if ($attempt -lt $maxAttempts) {
-                    Write-Host "Retrying in 5 seconds..." -ForegroundColor Yellow
-                    Start-Sleep 5
+                $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+                if ($svc) {
+                    Write-Host "Service status after wait: $($svc.Status)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "Service not found after wait" -ForegroundColor Red
                 }
             }
+            
         } catch {
             Write-Host "Start attempt $attempt failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            if ($attempt -lt $maxAttempts) {
-                Start-Sleep 5
-            }
+        }
+        
+        if (-not $serviceStarted -and $attempt -lt $maxAttempts) {
+            Write-Host "Retrying in 10 seconds..." -ForegroundColor Yellow
+            Start-Sleep 10
         }
     }
     
-    # Final status check and API test
+    # Final status check using enhanced health monitoring
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc.Status -eq "Running") {
-        Write-Host "Service is running successfully!" -ForegroundColor Green
+        Write-Host "Service is running, checking health..." -ForegroundColor Green
         
-        # Test API connectivity
-        Write-Host "Testing API connectivity..." -ForegroundColor Yellow
-        $apiWorking = $false
+        # Use the health check function with longer timeout for first startup
+        $isHealthy = Wait-ForServiceHealth -ServiceName $ServiceName -TimeoutSeconds 90
         
-        for ($i = 1; $i -le 12; $i++) {
-            try {
-                Start-Sleep 5
-                $response = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 10
-                Write-Host "API is responding: HTTP $($response.StatusCode)" -ForegroundColor Green
-                $apiWorking = $true
-                break
-            } catch {
-                Write-Host "API test $i/12: waiting for API to start..." -ForegroundColor Yellow
-            }
-        }
-        
-        if (-not $apiWorking) {
-            Write-Host "WARNING: API not responding yet" -ForegroundColor Yellow
-            Write-Host "The service is running but API may need more time to start" -ForegroundColor Yellow
-        }
-        
-        # Test bridge status if paired
-        if ($PairCode -and $apiWorking) {
-            Write-Host "Testing bridge status..." -ForegroundColor Yellow
-            try {
-                $statusResult = Start-Process -FilePath $targetExe -ArgumentList "status" -Wait -PassThru -NoNewWindow
-                if ($statusResult.ExitCode -eq 0) {
-                    Write-Host "Bridge status check successful!" -ForegroundColor Green
+        if ($isHealthy) {
+            Write-Host "✅ Service is healthy and fully operational!" -ForegroundColor Green
+            
+            # Test bridge status if paired
+            if ($PairCode) {
+                Write-Host "Testing paired bridge status..." -ForegroundColor Yellow
+                try {
+                    $statusArgs = @("status", "--config", "`"$configPath`"")
+                    $statusResult = Start-Process -FilePath $targetExe -ArgumentList $statusArgs -Wait -PassThru -NoNewWindow
+                    if ($statusResult.ExitCode -eq 0) {
+                        Write-Host "✅ Bridge status check successful!" -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️  Bridge status check returned exit code: $($statusResult.ExitCode)" -ForegroundColor Yellow
+                    }
+                } catch {
+                    Write-Host "⚠️  Bridge status check failed: $($_.Exception.Message)" -ForegroundColor Yellow
                 }
-            } catch {
-                Write-Host "Bridge status check failed, but service is running" -ForegroundColor Yellow
             }
+        } else {
+            Write-Host "⚠️  Service is running but not healthy - API may still be starting up" -ForegroundColor Yellow
         }
         
     } else {
@@ -355,28 +483,86 @@ api_server:
         Write-Host "3. Try manual start: net start $ServiceName" -ForegroundColor White
         Write-Host "4. Run directly: `"$targetExe`" --config `"$configPath`"" -ForegroundColor White
         
-        # Try to get more error information
+        # Enhanced error diagnosis
         Write-Host ""
+        Write-Host "Running enhanced diagnostics..." -ForegroundColor Yellow
+        
+        # Check Windows Event Log for service errors
+        try {
+            Write-Host "Checking Windows Event Log for recent service errors..." -ForegroundColor Yellow
+            $eventLogEntries = Get-EventLog -LogName Application -Source "Service Control Manager" -Newest 5 -ErrorAction SilentlyContinue | Where-Object { $_.Message -like "*$ServiceName*" }
+            if ($eventLogEntries) {
+                Write-Host "Recent service-related events:" -ForegroundColor Yellow
+                $eventLogEntries | ForEach-Object {
+                    Write-Host "  [$($_.TimeGenerated)] $($_.EntryType): $($_.Message)" -ForegroundColor Gray
+                }
+            } else {
+                Write-Host "No recent service events found in Event Log" -ForegroundColor Gray
+            }
+        } catch {
+            Write-Host "Could not check Event Log: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        
+        # Check if log file exists and has content
+        $logPath = Join-Path $DataDir "bridge.log"
+        if (Test-Path $logPath) {
+            Write-Host "Checking bridge log file: $logPath" -ForegroundColor Yellow
+            try {
+                $logContent = Get-Content $logPath -Tail 20 -ErrorAction SilentlyContinue
+                if ($logContent) {
+                    Write-Host "Last 20 lines of bridge log:" -ForegroundColor Yellow
+                    $logContent | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+                } else {
+                    Write-Host "Log file exists but is empty" -ForegroundColor Gray
+                }
+            } catch {
+                Write-Host "Could not read log file: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "Bridge log file does not exist: $logPath" -ForegroundColor Gray
+        }
+        
+        # Try to run bridge directly with timeout
         Write-Host "Attempting to run bridge directly for error diagnosis..." -ForegroundColor Yellow
         try {
+            # Create temporary log files
+            $tempErrorLog = Join-Path $env:TEMP "bridge-diagnostic-error.log"
+            $tempOutputLog = Join-Path $env:TEMP "bridge-diagnostic-output.log"
+            
             # Use proper argument array with quoted config path
             $arguments = @("--config", "`"$configPath`"", "--log-level", "debug")
             Write-Host "Running: $targetExe $($arguments -join ' ')" -ForegroundColor Gray
+            Write-Host "This will run for 10 seconds to capture startup errors..." -ForegroundColor Gray
             
-            $directResult = Start-Process -FilePath $targetExe -ArgumentList $arguments -Wait -PassThru -NoNewWindow -RedirectStandardError "$env:TEMP\bridge-error.log" -RedirectStandardOutput "$env:TEMP\bridge-output.log"
+            # Start the process but kill it after 10 seconds
+            $process = Start-Process -FilePath $targetExe -ArgumentList $arguments -PassThru -NoNewWindow -RedirectStandardError $tempErrorLog -RedirectStandardOutput $tempOutputLog
             
-            if (Test-Path "$env:TEMP\bridge-error.log") {
-                $errorContent = Get-Content "$env:TEMP\bridge-error.log" -Raw
-                if ($errorContent) {
-                    Write-Host "Error details: $errorContent" -ForegroundColor Red
-                }
+            # Wait 10 seconds then kill if still running
+            if (!$process.WaitForExit(10000)) {
+                Write-Host "Stopping diagnostic run after 10 seconds..." -ForegroundColor Gray
+                $process.Kill()
+                $process.WaitForExit(5000)
             }
             
-            if (Test-Path "$env:TEMP\bridge-output.log") {
-                $outputContent = Get-Content "$env:TEMP\bridge-output.log" -Raw
-                if ($outputContent) {
-                    Write-Host "Output details: $outputContent" -ForegroundColor Yellow
+            # Read the captured output
+            Start-Sleep 1
+            
+            if (Test-Path $tempErrorLog) {
+                $errorContent = Get-Content $tempErrorLog -Raw -ErrorAction SilentlyContinue
+                if ($errorContent -and $errorContent.Trim() -ne "") {
+                    Write-Host "Diagnostic Error Output:" -ForegroundColor Red
+                    $errorContent -split "\n" | ForEach-Object { if ($_.Trim()) { Write-Host "  $_" -ForegroundColor Red } }
                 }
+                Remove-Item $tempErrorLog -Force -ErrorAction SilentlyContinue
+            }
+            
+            if (Test-Path $tempOutputLog) {
+                $outputContent = Get-Content $tempOutputLog -Raw -ErrorAction SilentlyContinue
+                if ($outputContent -and $outputContent.Trim() -ne "") {
+                    Write-Host "Diagnostic Standard Output:" -ForegroundColor Yellow
+                    $outputContent -split "\n" | ForEach-Object { if ($_.Trim()) { Write-Host "  $_" -ForegroundColor Yellow } }
+                }
+                Remove-Item $tempOutputLog -Force -ErrorAction SilentlyContinue
             }
         } catch {
             Write-Host "Could not run direct diagnosis: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -409,11 +595,50 @@ api_server:
     Write-Host "   net start $ServiceName           - Start service" -ForegroundColor White
     Write-Host "   net stop $ServiceName            - Stop service" -ForegroundColor White
 
+    # Final validation and recommendations
     Write-Host ""
-    if ($svc.Status -eq "Running") {
-        Write-Host "Gym Door Bridge installation completed successfully!" -ForegroundColor Green
+    Write-Host "Final Installation Status:" -ForegroundColor Cyan
+    Write-Host "========================" -ForegroundColor Cyan
+    
+    $finalSvc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($finalSvc -and $finalSvc.Status -eq "Running") {
+        Write-Host "✅ Installation completed successfully!" -ForegroundColor Green
+        Write-Host "✅ Service is running" -ForegroundColor Green
+        
+        if ($PairCode) {
+            Write-Host "✅ Device pairing was attempted" -ForegroundColor Green
+        }
+        
+        # Test API accessibility
+        Write-Host ""
+        Write-Host "Testing API accessibility..." -ForegroundColor Yellow
+        try {
+            $apiResponse = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+            Write-Host "✅ API is accessible at http://localhost:8081" -ForegroundColor Green
+        } catch {
+            Write-Host "⚠️  API not yet accessible (this is normal, may take a few minutes)" -ForegroundColor Yellow
+        }
+        
+        Write-Host ""
+        Write-Host "🎉 Gym Door Bridge is installed and running!" -ForegroundColor Green
+        
+    } elseif ($finalSvc) {
+        Write-Host "⚠️  Installation completed but service is not running" -ForegroundColor Yellow
+        Write-Host "   Service Status: $($finalSvc.Status)" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Next Steps:" -ForegroundColor Yellow
+        Write-Host "1. Check the diagnostic output above for errors" -ForegroundColor White
+        Write-Host "2. Try starting manually: net start $ServiceName" -ForegroundColor White
+        Write-Host "3. Check Event Viewer: Windows Logs > Application" -ForegroundColor White
+        Write-Host "4. Check bridge logs: $DataDir\bridge.log" -ForegroundColor White
+        if (-not $PairCode) {
+            Write-Host "5. Pair the device: gym-door-bridge pair YOUR_PAIR_CODE --config `"$configPath`"" -ForegroundColor White
+        }
+        
     } else {
-        Write-Host "Gym Door Bridge installed but service needs manual start" -ForegroundColor Yellow
+        Write-Host "❌ Installation failed - service not found" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Please check the diagnostic output above and contact support if needed." -ForegroundColor Yellow
     }
 
 } catch {

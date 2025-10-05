@@ -115,6 +115,24 @@ func runAsWindowsService() {
 		os.Exit(1)
 	}
 	
+	// For Windows service, try to populate device credentials from auth manager if missing from config
+	if cfg.DeviceID == "" || cfg.DeviceKey == "" {
+		if authManager, err := auth.NewAuthManager(); err == nil {
+			if err := authManager.Initialize(); err == nil {
+				if authManager.IsAuthenticated() {
+					if deviceID, deviceKey, err := authManager.GetCredentials(); err == nil {
+						if cfg.DeviceID == "" {
+							cfg.DeviceID = deviceID
+						}
+						if cfg.DeviceKey == "" {
+							cfg.DeviceKey = deviceKey
+						}
+					}
+				}
+			}
+		}
+	}
+	
 	// Run as Windows service
 	err = windows.RunService(cfg, bridgeMain, false)
 	if err != nil {
@@ -132,6 +150,24 @@ func runAsConsole() {
 	cfg, err := config.Load(configFile)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to load configuration")
+	}
+	
+	// Try to populate device credentials from auth manager if missing from config
+	if cfg.DeviceID == "" || cfg.DeviceKey == "" {
+		if authManager, err := auth.NewAuthManager(); err == nil {
+			if err := authManager.Initialize(); err == nil {
+				if authManager.IsAuthenticated() {
+					if deviceID, deviceKey, err := authManager.GetCredentials(); err == nil {
+						if cfg.DeviceID == "" {
+							cfg.DeviceID = deviceID
+						}
+						if cfg.DeviceKey == "" {
+							cfg.DeviceKey = deviceKey
+						}
+					}
+				}
+			}
+		}
 	}
 	
 	logger.WithField("config", cfg).Info("Bridge starting up")

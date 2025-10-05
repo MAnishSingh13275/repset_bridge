@@ -148,13 +148,45 @@ func (m *Manager) initializeComponents() error {
 	
 	// Initialize event processor
 	m.eventProcessor = processor.NewEventProcessor(db, m.logger)
+	
+	// Get device ID from config or auth manager if available
+	deviceID := m.deviceID
+	if deviceID == "" {
+		deviceID = m.config.DeviceID
+	}
+	
+	// If still empty, try to get from auth manager
+	if deviceID == "" {
+		m.logger.Debug("Device ID not found in config, checking auth manager")
+		authManager, err := auth.NewAuthManager()
+		if err != nil {
+			m.logger.WithError(err).Error("Failed to create auth manager while looking for device ID")
+		} else {
+			if err := authManager.Initialize(); err != nil {
+				m.logger.WithError(err).Error("Failed to initialize auth manager while looking for device ID")
+			} else {
+				if authManager.IsAuthenticated() {
+					deviceID = authManager.GetDeviceID()
+					m.logger.WithField("deviceID", deviceID).Info("Retrieved device ID from auth manager")
+				} else {
+					m.logger.Warn("Auth manager not authenticated - device may not be paired")
+				}
+			}
+		}
+	}
+	
 	processorConfig := processor.ProcessorConfig{
-		DeviceID:            m.deviceID,
+		DeviceID:            deviceID,
 		EnableDeduplication: true,
 		DeduplicationWindow: 300, // 5 minutes
 	}
 	if err := m.eventProcessor.Initialize(m.ctx, processorConfig); err != nil {
 		return fmt.Errorf("failed to initialize event processor: %w", err)
+	}
+	
+	// Update manager's device ID if we retrieved it from auth manager
+	if m.deviceID == "" && deviceID != "" {
+		m.deviceID = deviceID
 	}
 	
 	// Set up event callback for adapters

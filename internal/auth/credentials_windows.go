@@ -19,13 +19,8 @@ type WindowsCredentialManager struct {
 
 // NewWindowsCredentialManager creates a new Windows credential manager
 func NewWindowsCredentialManager() (*WindowsCredentialManager, error) {
-	// Get user's AppData directory
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		return nil, fmt.Errorf("APPDATA environment variable not set")
-	}
-
-	credPath := filepath.Join(appData, "GymDoorBridge", "credentials.dat")
+	// Try to determine if running as service and use appropriate credential storage location
+	credPath := getCredentialPath()
 
 	// Ensure directory exists
 	dir := filepath.Dir(credPath)
@@ -37,6 +32,25 @@ func NewWindowsCredentialManager() (*WindowsCredentialManager, error) {
 		serviceName: "GymDoorBridge",
 		credPath:    credPath,
 	}, nil
+}
+
+// getCredentialPath determines the appropriate path for credential storage
+// Uses machine-wide storage that's accessible to both user sessions and services
+func getCredentialPath() string {
+	// Try ProgramData first (machine-wide, accessible to services)
+	programData := os.Getenv("PROGRAMDATA")
+	if programData != "" {
+		return filepath.Join(programData, "GymDoorBridge", "credentials.dat")
+	}
+
+	// Fallback to user AppData
+	appData := os.Getenv("APPDATA")
+	if appData != "" {
+		return filepath.Join(appData, "GymDoorBridge", "credentials.dat")
+	}
+
+	// Final fallback to current directory
+	return filepath.Join(".", "credentials.dat")
 }
 
 // Windows DPAPI structures and functions
