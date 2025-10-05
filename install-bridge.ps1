@@ -217,29 +217,86 @@ enabled_adapters:
 
     # Start service
     Write-Host "Starting service..." -ForegroundColor Yellow
+    
+    # Try multiple methods to start the service
+    $serviceStarted = $false
+    
+    # Method 1: PowerShell Start-Service
     try {
-        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
-        Start-Sleep 5
-        
+        Start-Service -Name $ServiceName -ErrorAction Stop
+        Start-Sleep 3
         $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         if ($svc.Status -eq "Running") {
-            Write-Host "Service is running successfully!" -ForegroundColor Green
-            
-            # Test API
-            try {
-                Start-Sleep 3
-                $response = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 10
-                Write-Host "API is responding: HTTP $($response.StatusCode)" -ForegroundColor Green
-            } catch {
-                Write-Host "INFO: API may take a moment to start (this is normal)" -ForegroundColor Yellow
-            }
-        } else {
-            Write-Host "WARNING: Service installed but not running (Status: $($svc.Status))" -ForegroundColor Yellow
-            Write-Host "Try starting manually: net start $ServiceName" -ForegroundColor Yellow
+            $serviceStarted = $true
+            Write-Host "Service started successfully with PowerShell!" -ForegroundColor Green
         }
     } catch {
-        Write-Host "WARNING: Could not start service: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host "Try starting manually: net start $ServiceName" -ForegroundColor Yellow
+        Write-Host "PowerShell start failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    
+    # Method 2: net start command
+    if (-not $serviceStarted) {
+        try {
+            $netResult = & net start $ServiceName 2>&1
+            Start-Sleep 3
+            $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            if ($svc.Status -eq "Running") {
+                $serviceStarted = $true
+                Write-Host "Service started successfully with net command!" -ForegroundColor Green
+            } else {
+                Write-Host "Net start output: $netResult" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "Net start failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+    
+    # Method 3: sc start command
+    if (-not $serviceStarted) {
+        try {
+            & sc.exe start $ServiceName | Out-Null
+            Start-Sleep 5
+            $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            if ($svc.Status -eq "Running") {
+                $serviceStarted = $true
+                Write-Host "Service started successfully with sc command!" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "SC start failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+    
+    # Final status check
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($svc.Status -eq "Running") {
+        Write-Host "Service is running successfully!" -ForegroundColor Green
+        
+        # Test API
+        Write-Host "Testing API connectivity..." -ForegroundColor Yellow
+        $apiWorking = $false
+        for ($i = 1; $i -le 6; $i++) {
+            try {
+                Start-Sleep 5
+                $response = Invoke-WebRequest -Uri "http://localhost:8081/api/v1/health" -UseBasicParsing -TimeoutSec 10
+                Write-Host "API is responding: HTTP $($response.StatusCode)" -ForegroundColor Green
+                $apiWorking = $true
+                break
+            } catch {
+                Write-Host "API test attempt $i/6 failed, waiting..." -ForegroundColor Yellow
+            }
+        }
+        
+        if (-not $apiWorking) {
+            Write-Host "WARNING: API not responding yet, but service is running" -ForegroundColor Yellow
+            Write-Host "The API may take a few more minutes to start" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "ERROR: Service failed to start (Status: $($svc.Status))" -ForegroundColor Red
+        Write-Host "Manual troubleshooting steps:" -ForegroundColor Yellow
+        Write-Host "1. Check Windows Event Viewer for errors" -ForegroundColor White
+        Write-Host "2. Try: net start $ServiceName" -ForegroundColor White
+        Write-Host "3. Check logs at: $DataDir\bridge.log" -ForegroundColor White
+        Write-Host "4. Verify config at: $configPath" -ForegroundColor White
     }
 
     # Installation summary
@@ -253,6 +310,9 @@ enabled_adapters:
     Write-Host "Server URL        : $ServerUrl" -ForegroundColor White
     if ($PairCode) { 
         Write-Host "Pair Code Used    : $PairCode" -ForegroundColor White 
+        Write-Host ""
+        Write-Host "NOTE: Device credentials are stored securely in Windows Credential Manager," -ForegroundColor Cyan
+        Write-Host "      not in the config file. This is normal and secure behavior." -ForegroundColor Cyan
     }
 
     Write-Host ""
