@@ -187,3 +187,81 @@ func (c *HTTPClient) CheckConnectivity(ctx context.Context) error {
 
 	return nil
 }
+
+// DeviceStatusRequest represents a device status check request
+type DeviceStatusRequest struct {
+	RequestID string `json:"requestId,omitempty"`
+}
+
+// DeviceStatusResponse represents the response from device status check
+type DeviceStatusResponse struct {
+	Status        string      `json:"status"`
+	LastSeen      string      `json:"lastSeen"`
+	QueueDepth    int         `json:"queueDepth"`
+	SystemInfo    *SystemInfo `json:"systemInfo,omitempty"`
+	ConnectedDevices []string `json:"connectedDevices,omitempty"`
+}
+
+// SendDeviceStatus sends device status to the cloud
+func (c *HTTPClient) SendDeviceStatus(ctx context.Context, statusReq *DeviceStatusRequest) (*DeviceStatusResponse, error) {
+	req := &Request{
+		Method:      http.MethodPost,
+		Path:        "/api/v1/devices/status",
+		Body:        statusReq,
+		RequireAuth: true,
+	}
+
+	resp, err := c.Do(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("device status request failed: %w", err)
+	}
+
+	var statusResp DeviceStatusResponse
+	if err := json.Unmarshal(resp.Body, &statusResp); err != nil {
+		return nil, fmt.Errorf("failed to parse status response: %w", err)
+	}
+
+	c.logger.Debug("Device status sent successfully")
+	return &statusResp, nil
+}
+
+// TriggerHeartbeat manually triggers a heartbeat
+func (c *HTTPClient) TriggerHeartbeat(ctx context.Context) error {
+	req := &Request{
+		Method:      http.MethodPost,
+		Path:        "/api/v1/devices/heartbeat/trigger",
+		RequireAuth: true,
+	}
+
+	_, err := c.Do(ctx, req)
+	if err != nil {
+		return fmt.Errorf("heartbeat trigger failed: %w", err)
+	}
+
+	c.logger.Info("Heartbeat triggered successfully")
+	return nil
+}
+
+// SubmitEvents submits events to the general events endpoint
+func (c *HTTPClient) SubmitEvents(ctx context.Context, events []CheckinEvent) error {
+	if len(events) == 0 {
+		return nil // Nothing to submit
+	}
+
+	req := &Request{
+		Method: http.MethodPost,
+		Path:   "/api/v1/events",
+		Body: &CheckinRequest{
+			Events: events,
+		},
+		RequireAuth: true,
+	}
+
+	_, err := c.Do(ctx, req)
+	if err != nil {
+		return fmt.Errorf("events submission failed: %w", err)
+	}
+
+	c.logger.Info("Events submitted successfully", "count", len(events))
+	return nil
+}

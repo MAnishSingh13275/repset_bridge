@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"gym-door-bridge/internal/auth"
 	"gym-door-bridge/internal/bridge"
@@ -459,6 +460,14 @@ This removes the secure connection and device credentials.`,
 				fmt.Printf("Tier: %s\n", cfg.Tier)
 				fmt.Printf("Heartbeat Interval: %d seconds\n", cfg.HeartbeatInterval)
 				
+				// Test connectivity if paired
+				fmt.Printf("\nConnectivity Test: ")
+				if err := testConnectivity(cfg); err != nil {
+					fmt.Printf("❌ FAILED (%v)\n", err)
+				} else {
+					fmt.Printf("✅ CONNECTED\n")
+				}
+				
 				// Show installation info if available
 				if cfg.Installation.InstalledAt != "" {
 					fmt.Printf("\nInstallation Info:\n")
@@ -485,9 +494,133 @@ This removes the secure connection and device credentials.`,
 		},
 	}
 
+	var triggerHeartbeatCmd = &cobra.Command{
+		Use:   "trigger-heartbeat",
+		Short: "Manually trigger a heartbeat to the platform",
+		Long:  `Send an immediate heartbeat to the platform to test connectivity and update status.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			// Load configuration
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			if !cfg.IsPaired() {
+				fmt.Println("❌ Bridge is not paired. Use 'gym-door-bridge pair' first.")
+				os.Exit(1)
+			}
+			
+			// Initialize components
+			logger := logging.Initialize(logLevel)
+			
+			// Create auth manager
+			authManager, err := auth.NewAuthManager()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			if err := authManager.Initialize(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to initialize auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Create HTTP client
+			httpClient, err := client.NewHTTPClient(cfg, authManager, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create HTTP client: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Println("🔄 Triggering heartbeat...")
+			
+			ctx := context.Background()
+			if err := httpClient.TriggerHeartbeat(ctx); err != nil {
+				fmt.Printf("❌ Heartbeat failed: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Println("✅ Heartbeat triggered successfully!")
+		},
+	}
+
+	var deviceStatusCmd = &cobra.Command{
+		Use:   "device-status",
+		Short: "Check device status with the platform",
+		Long:  `Query the platform for current device status and configuration.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			// Load configuration
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+				os.Exit(1)
+			}
+			
+			if !cfg.IsPaired() {
+				fmt.Println("❌ Bridge is not paired. Use 'gym-door-bridge pair' first.")
+				os.Exit(1)
+			}
+			
+			// Initialize components
+			logger := logging.Initialize(logLevel)
+			
+			// Create auth manager
+			authManager, err := auth.NewAuthManager()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			if err := authManager.Initialize(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to initialize auth manager: %v\n", err)
+				os.Exit(1)
+			}
+			
+			// Create HTTP client
+			httpClient, err := client.NewHTTPClient(cfg, authManager, logger)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to create HTTP client: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Println("🔍 Checking device status...")
+			
+			ctx := context.Background()
+			statusReq := &client.DeviceStatusRequest{
+				RequestID: fmt.Sprintf("status_%d", time.Now().Unix()),
+			}
+			
+			statusResp, err := httpClient.SendDeviceStatus(ctx, statusReq)
+			if err != nil {
+				fmt.Printf("❌ Status check failed: %v\n", err)
+				os.Exit(1)
+			}
+			
+			fmt.Println("✅ Device Status Retrieved:")
+			fmt.Printf("  Status: %s\n", statusResp.Status)
+			fmt.Printf("  Last Seen: %s\n", statusResp.LastSeen)
+			fmt.Printf("  Queue Depth: %d\n", statusResp.QueueDepth)
+			
+			if statusResp.SystemInfo != nil {
+				fmt.Printf("  System Info:\n")
+				fmt.Printf("    CPU Usage: %.1f%%\n", statusResp.SystemInfo.CPUUsage)
+				fmt.Printf("    Memory Usage: %.1f%%\n", statusResp.SystemInfo.MemoryUsage)
+				fmt.Printf("    Disk Space: %.1f%%\n", statusResp.SystemInfo.DiskSpace)
+			}
+			
+			if len(statusResp.ConnectedDevices) > 0 {
+				fmt.Printf("  Connected Devices: %d\n", len(statusResp.ConnectedDevices))
+				for _, device := range statusResp.ConnectedDevices {
+					fmt.Printf("    - %s\n", device)
+				}
+			}
+		},
+	}
+
 	rootCmd.AddCommand(pairCmd)
 	rootCmd.AddCommand(unpairCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(triggerHeartbeatCmd)
+	rootCmd.AddCommand(deviceStatusCmd)
 }
 
 // restartWindowsService restarts the Windows service
@@ -523,4 +656,30 @@ func isServiceRunning() bool {
 	return string(output) != "" && 
 		   (string(output) != "" && 
 		    (len(output) > 0))
+}
+
+// testConnectivity tests connectivity to the platform
+func testConnectivity(cfg *config.Config) error {
+	logger := logging.Initialize("error") // Quiet logging for test
+	
+	// Create auth manager
+	authManager, err := auth.NewAuthManager()
+	if err != nil {
+		return fmt.Errorf("auth manager creation failed: %w", err)
+	}
+	if err := authManager.Initialize(); err != nil {
+		return fmt.Errorf("auth manager initialization failed: %w", err)
+	}
+	
+	// Create HTTP client
+	httpClient, err := client.NewHTTPClient(cfg, authManager, logger)
+	if err != nil {
+		return fmt.Errorf("HTTP client creation failed: %w", err)
+	}
+	
+	// Test connectivity
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	return httpClient.CheckConnectivity(ctx)
 }
