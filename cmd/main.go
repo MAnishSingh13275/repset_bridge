@@ -14,7 +14,6 @@ import (
 	"gym-door-bridge/internal/bridge"
 	"gym-door-bridge/internal/client"
 	"gym-door-bridge/internal/config"
-	"gym-door-bridge/internal/installer"
 	"gym-door-bridge/internal/logging"
 	"gym-door-bridge/internal/pairing"
 	"gym-door-bridge/internal/service/windows"
@@ -69,7 +68,8 @@ func init() {
 	}
 	
 	// Add cross-platform installer commands
-	addCrossPlatformInstallerCommands()
+	// TODO: Re-enable after fixing installer compilation issues
+	// addCrossPlatformInstallerCommands()
 	
 	// Add pairing commands
 	addPairingCommands()
@@ -248,6 +248,8 @@ func bridgeMain(ctx context.Context, cfg *config.Config) error {
 }
 
 // addCrossPlatformInstallerCommands adds cross-platform installer commands
+// TODO: Re-enable when installer compilation issues are fixed
+/*
 func addCrossPlatformInstallerCommands() {
 	var installCmd = &cobra.Command{
 		Use:   "install",
@@ -384,6 +386,7 @@ Requires administrator privileges on Windows or sudo on macOS.`,
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)
 }
+*/
 
 // addPairingCommands adds pairing-related commands
 func addPairingCommands() {
@@ -593,26 +596,27 @@ This removes the secure connection and device credentials.`,
 					fmt.Printf("  Version: %s\n", cfg.Installation.Version)
 				}
 				
+			// TODO: Re-enable when installer package is fixed
 			// Check service status using installer
-			if installer, err := installer.NewInstaller(); err == nil {
-				fmt.Printf("\nService Status: ")
-				if status, err := installer.Status(); err == nil {
-					switch status {
-					case "Running":
-						fmt.Printf("✅ RUNNING\n")
-					case "Stopped":
-						fmt.Printf("❌ STOPPED\n")
-					case "Not Installed":
-						fmt.Printf("⚠️ NOT INSTALLED\n")
-						fmt.Printf("\nTo install the service, run:\n")
-						fmt.Printf("  gym-door-bridge install\n")
-					default:
-						fmt.Printf("🔄 %s\n", status)
-					}
-				} else {
-					fmt.Printf("❌ ERROR (%v)\n", err)
-				}
-			}
+			// if installer, err := installer.NewInstaller(); err == nil {
+			//	fmt.Printf("\nService Status: ")
+			//	if status, err := installer.Status(); err == nil {
+			//		switch status {
+			//		case "Running":
+			//			fmt.Printf("✅ RUNNING\n")
+			//		case "Stopped":
+			//			fmt.Printf("❌ STOPPED\n")
+			//		case "Not Installed":
+			//			fmt.Printf("⚠️ NOT INSTALLED\n")
+			//			fmt.Printf("\nTo install the service, run:\n")
+			//			fmt.Printf("  gym-door-bridge install\n")
+			//		default:
+			//			fmt.Printf("🔄 %s\n", status)
+			//		}
+			//	} else {
+			//		fmt.Printf("❌ ERROR (%v)\n", err)
+			//	}
+			// }
 			} else {
 				fmt.Printf("Status: ❌ NOT PAIRED\n")
 				fmt.Printf("Server URL: %s\n", cfg.ServerURL)

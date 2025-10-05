@@ -3,6 +3,7 @@ package installer
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -294,4 +295,34 @@ func (i *Installer) ShowInstallationSummary() {
 	i.logger.Info("   1. Get a pairing code from your gym management platform")
 	i.logger.Info("   2. Run: gym-door-bridge pair YOUR_PAIR_CODE")
 	i.logger.Info("   3. The service will automatically discover and configure devices")
+}
+
+// copyFile copies a file from src to dst (cross-platform implementation)
+func copyFile(src, dst string) error {
+	// Open source file
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	// Create destination file
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer destFile.Close()
+
+	// Copy file contents
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy file contents: %w", err)
+	}
+
+	// Ensure all data is written to disk
+	if err := destFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync file: %w", err)
+	}
+
+	return nil
 }

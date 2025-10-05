@@ -2,12 +2,185 @@ package installer
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+)
+
+// installMacOS performs macOS-specific installation
+func (i *Installer) installMacOS() error {
+	// Check if running as root or with sudo
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("installation requires administrator privileges. Please run with sudo")
+	}
+
+	// Check if already installed
+	if installed, err := i.isInstalledMacOS(); err != nil {
+		return fmt.Errorf("failed to check installation status: %w", err)
+	} else if installed {
+		return fmt.Errorf("service is already installed. Use 'gym-door-bridge uninstall' first")
+	}
+
+	// Create base installation
+	if err := i.createBaseInstallation(); err != nil {
+		return fmt.Errorf("failed to create base installation: %w", err)
+	}
+
+	// Install launchd service
+	if err := i.installMacOSService(); err != nil {
+		return fmt.Errorf("failed to install launchd service: %w", err)
+	}
+
+	// Load and start the service
+	if err := i.startMacOS(); err != nil {
+		i.logger.WithError(err).Warn("Failed to start service automatically")
+		i.logger.Info("You can start the service manually using 'gym-door-bridge start'")
+	}
+
+	i.ShowInstallationSummary()
+	return nil
+}
+
+// uninstallMacOS performs macOS-specific uninstallation
+func (i *Installer) uninstallMacOS() error {
+	// Check if running as root or with sudo
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("uninstallation requires administrator privileges. Please run with sudo")
+	}
+
+	// Stop and unload service
+	if err := i.stopMacOS(); err != nil {
+		i.logger.WithError(err).Warn("Failed to stop service")
+	}
+
+	// Remove launchd service
+	if err := i.uninstallMacOSService(); err != nil {
+		return fmt.Errorf("failed to remove launchd service: %w", err)
+	}
+
+	// Remove installation directory
+	if err := os.RemoveAll(i.installPath); err != nil {
+		i.logger.WithError(err).Warn("Failed to remove installation directory")
+		i.logger.Info("You may need to manually remove: " + i.installPath)
+	}
+
+	i.logger.Info("✅ Uninstallation completed successfully!")
+	return nil
+}
+
+// isInstalledMacOS checks if the launchd service is installed
+func (i *Installer) isInstalledMacOS() (bool, error) {
+	plistPath := "/Library/LaunchDaemons/com.repset.gym-door-bridge.plist"
+	_, err := os.Stat(plistPath)
+	return !os.IsNotExist(err), nil
+}
+
+// installMacOSService installs the launchd service
+func (i *Installer) installMacOSService() error {
+	i.logger.Info("Installing launchd service...")
+
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.repset.gym-door-bridge</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%s</string>
+		<string>--config</string>
+		<string>%s</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>%s</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>%s/logs/bridge.log</string>
+	<key>StandardErrorPath</key>
+	<string>%s/logs/bridge-error.log</string>
+</dict>
+</plist>
+`, i.GetExecutablePath(), i.configPath, i.installPath, i.installPath, i.installPath)
+
+	plistPath := "/Library/LaunchDaemons/com.repset.gym-door-bridge.plist"
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		return fmt.Errorf("failed to create plist file: %w", err)
+	}
+
+	// Set proper ownership and permissions
+	if err := os.Chown(plistPath, 0, 0); err != nil {
+		return fmt.Errorf("failed to set plist ownership: %w", err)
+	}
+
+	i.logger.Info("✅ Launchd service installed successfully")
+	return nil
+}
+
+// uninstallMacOSService removes the launchd service
+func (i *Installer) uninstallMacOSService() error {
+	i.logger.Info("Removing launchd service...")
+
+	plistPath := "/Library/LaunchDaemons/com.repset.gym-door-bridge.plist"
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove plist file: %w", err)
+	}
+
+	i.logger.Info("✅ Launchd service removed successfully")
+	return nil
+}
+
+// startMacOS starts the launchd service
+func (i *Installer) startMacOS() error {
+	i.logger.Info("Starting launchd service...")
+
+	if err := exec.Command("launchctl", "load", "/Library/LaunchDaemons/com.repset.gym-door-bridge.plist").Run(); err != nil {
+		return fmt.Errorf("failed to load service: %w", err)
+	}
+
+	// Wait for service to start
+	if err := i.WaitForService("Running", 30*time.Second); err != nil {
+		return fmt.Errorf("service failed to start: %w", err)
+	}
+
+	i.logger.Info("✅ Launchd service started successfully")
+	return nil
+}
+
+// stopMacOS stops the launchd service
+func (i *Installer) stopMacOS() error {
+	i.logger.Info("Stopping launchd service...")
+
+	if err := exec.Command("launchctl", "unload", "/Library/LaunchDaemons/com.repset.gym-door-bridge.plist").Run(); err != nil {
+		return fmt.Errorf("failed to unload service: %w", err)
+	}
+
+	// Wait for service to stop
+	if err := i.WaitForService("Stopped", 30*time.Second); err != nil {
+		return fmt.Errorf("service failed to stop: %w", err)
+	}
+
+	i.logger.Info("✅ Launchd service stopped successfully")
+	return nil
+}
+
+// statusMacOS returns the launchd service status
+func (i *Installer) statusMacOS() (string, error) {
+	cmd := exec.Command("launchctl", "list", "com.repset.gym-door-bridge")
+	output, err := cmd.Output()
+	if err != nil {
+		return "Stopped", nil
+	}
+	
+	if strings.Contains(string(output), "com.repset.gym-door-bridge") {
+		return "Running", nil
+	}
+	return "Stopped", nil
+}
 )
 
 const (
