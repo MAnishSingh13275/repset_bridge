@@ -7,20 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Cross-platform installer completion (Linux and macOS)
+- Enhanced device discovery with more hardware support
+- Advanced performance monitoring dashboard
+
+## [2.1.0] - 2025-10-05
+
 ### Added
-- Comprehensive documentation structure in `docs/` directory
-- Contributing guidelines and development setup
-- Proper project structure with organized directories
-- Build and deployment automation scripts
+- Cross-platform installer framework for Windows, macOS, and Linux
+- Automated Windows service installation with PowerShell script
+- Service management commands (install, uninstall, start, stop, restart)
+- Windows service with auto-start and failure recovery
+- Registry integration for Windows service configuration
+- Comprehensive Windows installation documentation
+- Build system improvements for multi-platform releases
 
 ### Changed
 - Reorganized all documentation into logical categories
 - Updated project structure for better maintainability
 - Improved .gitignore for better file organization
+- Enhanced build configuration with version information
+- Streamlined installation process for gym owners
 
 ### Fixed
 - Documentation consistency and navigation
 - Project file organization and cleanup
+- Compilation issues with cross-platform builds
+- Duplicate file removal and cleanup
+
+### Technical
+- Built with Go 1.21
+- Windows 64-bit executable with CGO support
+- PowerShell automation scripts
+- Service integration with Windows Event Log
+- Automatic restart on service failure
 
 ## [1.0.0] - 2024-01-01
 
