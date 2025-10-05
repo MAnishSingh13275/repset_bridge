@@ -177,6 +177,33 @@ try {
     }
     $downloadInfo | ConvertTo-Json | Set-Content $infoFile
 
+    # Download remaining step scripts
+    Write-Step "Downloading installation scripts..."
+    $scriptUrls = @{
+        "step2-install.ps1" = "https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/step2-install.ps1"
+        "step3-service.ps1" = "https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/step3-service.ps1"
+        "step4-pair.ps1" = "https://raw.githubusercontent.com/MAnishSingh13275/repset_bridge/main/step4-pair.ps1"
+    }
+    
+    $scriptsDownloaded = 0
+    foreach ($script in $scriptUrls.GetEnumerator()) {
+        try {
+            Invoke-WebRequest -Uri $script.Value -OutFile $script.Key -UseBasicParsing -TimeoutSec 30
+            if (Test-Path $script.Key) {
+                $scriptsDownloaded++
+                Write-Step "✅ Downloaded $($script.Key)" "Success"
+            }
+        } catch {
+            Write-Step "⚠️ Could not download $($script.Key): $($_.Exception.Message)" "Warning"
+        }
+    }
+    
+    if ($scriptsDownloaded -eq 3) {
+        Write-Step "✅ All installation scripts downloaded" "Success"
+    } else {
+        Write-Step "⚠️ Some scripts failed to download - you may need to download them manually" "Warning"
+    }
+
     if (-not $Silent) {
         Write-Host ""
         Write-Host "🎉 STEP 1 COMPLETED SUCCESSFULLY!" -ForegroundColor Green
@@ -187,11 +214,21 @@ try {
         Write-Host "   💾 Download size: $sizeMB MB" -ForegroundColor Gray
         Write-Host "   📦 Files extracted: $($extractedFiles.Count)" -ForegroundColor Gray
         Write-Host "   🔧 Bridge executable: $($bridgeExe.Name)" -ForegroundColor Gray
+        Write-Host "   📜 Installation scripts: $scriptsDownloaded/3 downloaded" -ForegroundColor Gray
         Write-Host ""
         Write-Host "✅ Ready for Step 2: Installation" -ForegroundColor Green
         Write-Host ""
-        Write-Host "Next: Run the installation script:" -ForegroundColor Yellow
-        Write-Host "   .\step2-install.ps1" -ForegroundColor Gray
+        if ($scriptsDownloaded -eq 3) {
+            Write-Host "Next: Run the installation script:" -ForegroundColor Yellow
+            Write-Host "   .\step2-install.ps1" -ForegroundColor Gray
+        } else {
+            Write-Host "⚠️ Some scripts need manual download:" -ForegroundColor Yellow
+            foreach ($script in $scriptUrls.GetEnumerator()) {
+                if (-not (Test-Path $script.Key)) {
+                    Write-Host "   Invoke-WebRequest -Uri '$($script.Value)' -OutFile '$($script.Key)'" -ForegroundColor Gray
+                }
+            }
+        }
         Write-Host ""
         
         Read-Host "Press Enter to continue"
