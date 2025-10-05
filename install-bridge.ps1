@@ -197,49 +197,35 @@ api_server:
     Start-Sleep 2
     
     try {
-        # Create service with proper settings
+        # Create service with proper settings - use PowerShell method for better quote handling
         $binPath = "`"$targetExe`" --config `"$configPath`""
         
         Write-Host "Creating service with binary path: $binPath" -ForegroundColor Yellow
         
-        # Create the service and capture output
-        $createResult = & sc.exe create $ServiceName binPath= $binPath DisplayName= $ServiceDisp start= auto 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Service creation failed: $createResult" -ForegroundColor Red
-            throw "sc.exe create failed with exit code $LASTEXITCODE"
-        }
+        # Use PowerShell New-Service instead of sc.exe for better quote handling
+        New-Service -Name $ServiceName -BinaryPathName $binPath -DisplayName $ServiceDisp -StartupType Automatic -Description "Gym Door Access Bridge - integrates RepSet with door controllers" | Out-Null
+        Write-Host "Service created with PowerShell New-Service" -ForegroundColor Green
         
-        # Configure service description
-        $descResult = & sc.exe description $ServiceName "Gym Door Access Bridge - integrates RepSet with door controllers" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Warning: Could not set service description: $descResult" -ForegroundColor Yellow
-        }
+
         
-        # Configure service to run as LocalService
-        $configResult = & sc.exe config $ServiceName obj= "NT AUTHORITY\LocalService" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Warning: Could not set service account: $configResult" -ForegroundColor Yellow
-        }
-        
-        # Configure failure recovery
-        $failureResult = & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Warning: Could not set failure recovery: $failureResult" -ForegroundColor Yellow
-        }
-        
-        Write-Host "Service created successfully" -ForegroundColor Green
     } catch {
         Write-Host "ERROR: Failed to create service: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+    
+    # Configure service account and failure recovery using sc.exe
+    try {
+        Write-Host "Configuring service settings..." -ForegroundColor Yellow
         
-        # Try alternative method with New-Service
-        Write-Host "Trying alternative service creation method..." -ForegroundColor Yellow
-        try {
-            New-Service -Name $ServiceName -BinaryPathName $binPath -DisplayName $ServiceDisp -StartupType Automatic -Description "Gym Door Access Bridge" | Out-Null
-            Write-Host "Service created with PowerShell New-Service" -ForegroundColor Green
-        } catch {
-            Write-Host "ERROR: Both service creation methods failed: $($_.Exception.Message)" -ForegroundColor Red
-            exit 1
-        }
+        # Configure service to run as LocalService
+        & sc.exe config $ServiceName obj= "NT AUTHORITY\LocalService" 2>&1 | Out-Null
+        
+        # Configure failure recovery
+        & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 2>&1 | Out-Null
+        
+        Write-Host "Service configuration completed" -ForegroundColor Green
+    } catch {
+        Write-Host "WARNING: Could not configure all service settings: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 
     # Verify service exists
@@ -373,15 +359,27 @@ api_server:
         Write-Host ""
         Write-Host "Attempting to run bridge directly for error diagnosis..." -ForegroundColor Yellow
         try {
-            $directResult = Start-Process -FilePath $targetExe -ArgumentList @("--config", $configPath, "--log-level", "debug") -Wait -PassThru -NoNewWindow -RedirectStandardError "$env:TEMP\bridge-error.log"
+            # Use proper argument array with quoted config path
+            $arguments = @("--config", "`"$configPath`"", "--log-level", "debug")
+            Write-Host "Running: $targetExe $($arguments -join ' ')" -ForegroundColor Gray
+            
+            $directResult = Start-Process -FilePath $targetExe -ArgumentList $arguments -Wait -PassThru -NoNewWindow -RedirectStandardError "$env:TEMP\bridge-error.log" -RedirectStandardOutput "$env:TEMP\bridge-output.log"
+            
             if (Test-Path "$env:TEMP\bridge-error.log") {
                 $errorContent = Get-Content "$env:TEMP\bridge-error.log" -Raw
                 if ($errorContent) {
                     Write-Host "Error details: $errorContent" -ForegroundColor Red
                 }
             }
+            
+            if (Test-Path "$env:TEMP\bridge-output.log") {
+                $outputContent = Get-Content "$env:TEMP\bridge-output.log" -Raw
+                if ($outputContent) {
+                    Write-Host "Output details: $outputContent" -ForegroundColor Yellow
+                }
+            }
         } catch {
-            Write-Host "Could not run direct diagnosis" -ForegroundColor Yellow
+            Write-Host "Could not run direct diagnosis: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     }
 
