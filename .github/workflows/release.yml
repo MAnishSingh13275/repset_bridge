@@ -45,20 +45,29 @@ jobs:
     - name: Create release package
       run: |
         mkdir release
+        # Copy the main executable
         copy gym-door-bridge.exe release\
-        copy install.bat release\
-        copy install.ps1 release\
-        copy web-install.ps1 release\
-        copy enhanced-bridge-installer.ps1 release\
-        copy GymDoorBridge-Installer.ps1 release\
-        copy install-gym-bridge-fixed.ps1 release\
-        copy README.md release\
-        copy INSTALLATION.md release\
-        copy DOWNLOAD.md release\
-        copy GYM_OWNER_GUIDE.md release\
-        copy config.yaml.example release\
         
+        # Copy the new installation scripts
+        copy install-bridge.ps1 release\
+        copy quick-install.ps1 release\
+        
+        # Copy documentation
+        if exist README.md copy README.md release\
+        if exist INSTALLATION_GUIDE.md copy INSTALLATION_GUIDE.md release\
+        if exist docs\installation\gym-owner-guide.md copy docs\installation\gym-owner-guide.md release\
+        
+        # Create example config
+        echo # RepSet Bridge Example Configuration > release\config.yaml.example
+        echo server_url: "https://repset.onezy.in" >> release\config.yaml.example
+        echo tier: "normal" >> release\config.yaml.example
+        echo # Device credentials - filled during pairing >> release\config.yaml.example
+        echo device_id: "" >> release\config.yaml.example
+        echo device_key: "" >> release\config.yaml.example
+        
+        # Create the ZIP package with proper naming
         cd release
+        powershell -Command "Compress-Archive -Path * -DestinationPath ..\gym-door-bridge-windows.zip"
         powershell -Command "Compress-Archive -Path * -DestinationPath ..\gym-door-bridge-${{ steps.version.outputs.VERSION }}-windows.zip"
       shell: cmd
       
@@ -72,16 +81,22 @@ jobs:
           
           ### For Gym Owners (Easy Installation)
           
-          **One-Click Install:**
+          **Ultra-Fast One-Line Install (with pair code):**
           ```powershell
           # Run PowerShell as Administrator:
-          iex (iwr -useb https://raw.githubusercontent.com/${{ github.repository }}/main/web-install.ps1).Content
+          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/latest/download/install-bridge.ps1" -OutFile "$env:TEMP\install-bridge.ps1"; & "$env:TEMP\install-bridge.ps1" -PairCode "YOUR_PAIR_CODE"
+          ```
+          
+          **Quick Install (manual pairing):**
+          ```powershell
+          # Run PowerShell as Administrator:
+          Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/latest/download/quick-install.ps1" -OutFile "$env:TEMP\quick-install.ps1"; & "$env:TEMP\quick-install.ps1"
           ```
           
           **Manual Install:**
-          1. Download `gym-door-bridge-${{ steps.version.outputs.VERSION }}-windows.zip`
-          2. Extract and run `install.bat` as Administrator
-          3. Done! Service will auto-discover your biometric devices
+          1. Download `gym-door-bridge-windows.zip`
+          2. Extract and run `install-bridge.ps1` as Administrator
+          3. Pair with your gym platform using the provided code
           
           ### Features
           - ✅ Automatic biometric device discovery
@@ -99,14 +114,11 @@ jobs:
           
           See [Installation Guide](https://github.com/${{ github.repository }}/blob/main/INSTALLATION.md) for detailed instructions.
         files: |
+          gym-door-bridge-windows.zip
           gym-door-bridge-${{ steps.version.outputs.VERSION }}-windows.zip
           gym-door-bridge.exe
-          install.bat
-          install.ps1
-          web-install.ps1
-          enhanced-bridge-installer.ps1
-          GymDoorBridge-Installer.ps1
-          install-gym-bridge-fixed.ps1
+          install-bridge.ps1
+          quick-install.ps1
         draft: false
         prerelease: false
       env:
