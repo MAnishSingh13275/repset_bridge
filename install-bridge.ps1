@@ -18,6 +18,14 @@ if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 Write-Host "Gym Door Bridge Installation" -ForegroundColor Cyan
 Write-Host "============================" -ForegroundColor Cyan
 
+# Constants (define before using)
+$ServiceName = "GymDoorBridge"
+$ServiceDisp = "Gym Door Access Bridge"
+$DataDir = Join-Path $env:ProgramData "GymDoorBridge"
+$TempZip = Join-Path $env:TEMP "gym-door-bridge.zip"
+$TempExtract = Join-Path $env:TEMP "gym-door-bridge"
+$DownloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
+
 # Add Windows Defender exclusions to prevent false positives
 Write-Host "Setting up Windows Defender exclusions..." -ForegroundColor Green
 try {
@@ -29,14 +37,6 @@ try {
     Write-Host "WARNING: Could not add Windows Defender exclusions: $($_.Exception.Message)" -ForegroundColor Yellow
     Write-Host "You may need to add exclusions manually if Windows Defender interferes" -ForegroundColor Yellow
 }
-
-# Constants
-$ServiceName = "GymDoorBridge"
-$ServiceDisp = "Gym Door Access Bridge"
-$DataDir = Join-Path $env:ProgramData "GymDoorBridge"
-$TempZip = Join-Path $env:TEMP "gym-door-bridge.zip"
-$TempExtract = Join-Path $env:TEMP "gym-door-bridge"
-$DownloadUrl = "https://github.com/MAnishSingh13275/repset_bridge/releases/latest/download/gym-door-bridge-windows.zip"
 
 try {
     # Create directories
@@ -192,29 +192,79 @@ api_server:
     # Create service with proper configuration
     Write-Host "Creating Windows service..." -ForegroundColor Green
     
+    # Remove any existing service first
+    & sc.exe delete $ServiceName 2>$null | Out-Null
+    Start-Sleep 2
+    
     try {
         # Create service with proper settings
         $binPath = "`"$targetExe`" --config `"$configPath`""
         
-        # Create the service
-        & sc.exe create $ServiceName binPath= $binPath DisplayName= $ServiceDisp start= auto | Out-Null
+        Write-Host "Creating service with binary path: $binPath" -ForegroundColor Yellow
         
-        # Configure service
-        & sc.exe description $ServiceName "Gym Door Access Bridge - integrates RepSet with door controllers" | Out-Null
-        & sc.exe config $ServiceName obj= "NT AUTHORITY\LocalService" | Out-Null
-        & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+        # Create the service and capture output
+        $createResult = & sc.exe create $ServiceName binPath= $binPath DisplayName= $ServiceDisp start= auto 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Service creation failed: $createResult" -ForegroundColor Red
+            throw "sc.exe create failed with exit code $LASTEXITCODE"
+        }
+        
+        # Configure service description
+        $descResult = & sc.exe description $ServiceName "Gym Door Access Bridge - integrates RepSet with door controllers" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Warning: Could not set service description: $descResult" -ForegroundColor Yellow
+        }
+        
+        # Configure service to run as LocalService
+        $configResult = & sc.exe config $ServiceName obj= "NT AUTHORITY\LocalService" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Warning: Could not set service account: $configResult" -ForegroundColor Yellow
+        }
+        
+        # Configure failure recovery
+        $failureResult = & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Warning: Could not set failure recovery: $failureResult" -ForegroundColor Yellow
+        }
         
         Write-Host "Service created successfully" -ForegroundColor Green
     } catch {
         Write-Host "ERROR: Failed to create service: $($_.Exception.Message)" -ForegroundColor Red
-        exit 1
+        
+        # Try alternative method with New-Service
+        Write-Host "Trying alternative service creation method..." -ForegroundColor Yellow
+        try {
+            New-Service -Name $ServiceName -BinaryPathName $binPath -DisplayName $ServiceDisp -StartupType Automatic -Description "Gym Door Access Bridge" | Out-Null
+            Write-Host "Service created with PowerShell New-Service" -ForegroundColor Green
+        } catch {
+            Write-Host "ERROR: Both service creation methods failed: $($_.Exception.Message)" -ForegroundColor Red
+            exit 1
+        }
     }
 
     # Verify service exists
-    Start-Sleep 2
+    Write-Host "Verifying service creation..." -ForegroundColor Yellow
+    Start-Sleep 3
+    
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if (-not $svc) {
         Write-Host "ERROR: Service not found after creation" -ForegroundColor Red
+        
+        # Try to get more information
+        Write-Host "Checking all services for partial matches..." -ForegroundColor Yellow
+        $allServices = Get-Service | Where-Object { $_.Name -like "*Gym*" -or $_.DisplayName -like "*Gym*" }
+        if ($allServices) {
+            Write-Host "Found related services:" -ForegroundColor Yellow
+            $allServices | ForEach-Object { Write-Host "  - $($_.Name): $($_.DisplayName)" -ForegroundColor Gray }
+        } else {
+            Write-Host "No related services found" -ForegroundColor Yellow
+        }
+        
+        # Check with sc.exe
+        Write-Host "Checking with sc.exe query..." -ForegroundColor Yellow
+        $scResult = & sc.exe query $ServiceName 2>&1
+        Write-Host "SC query result: $scResult" -ForegroundColor Gray
+        
         exit 1
     }
     Write-Host "Service verification successful: $($svc.Status)" -ForegroundColor Green
