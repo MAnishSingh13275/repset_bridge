@@ -33,7 +33,7 @@ if not exist "%~dp0GymDoorBridge-Installer.ps1" (
     echo.
     echo Please download both files:
     echo • GymDoorBridge-Installer.bat (this file)
-echo • GymDoorBridge-Installer.ps1
+    echo • GymDoorBridge-Installer.ps1
     echo.
     echo Download from: https://github.com/MAnishSingh13275/repset_bridge/releases
     echo.
@@ -65,7 +65,7 @@ if %errorlevel% == 0 (
     echo.
     echo ⚠️ Installation issue (code: %errorlevel%)
     echo.
-echo TRY THIS: Right-click "GymDoorBridge-Installer.ps1" → "Run with PowerShell"
+    echo TRY THIS: Right-click "GymDoorBridge-Installer.ps1" → "Run with PowerShell"
     echo.
     echo Contact support: support@repset.onezy.in
 )
