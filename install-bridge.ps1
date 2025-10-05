@@ -18,6 +18,18 @@ if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 Write-Host "Gym Door Bridge Installation" -ForegroundColor Cyan
 Write-Host "============================" -ForegroundColor Cyan
 
+# Add Windows Defender exclusions to prevent false positives
+Write-Host "Setting up Windows Defender exclusions..." -ForegroundColor Green
+try {
+    Add-MpPreference -ExclusionPath $InstallPath -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath $DataDir -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionProcess "gym-door-bridge.exe" -ErrorAction SilentlyContinue
+    Write-Host "Windows Defender exclusions added successfully" -ForegroundColor Green
+} catch {
+    Write-Host "WARNING: Could not add Windows Defender exclusions: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "You may need to add exclusions manually if Windows Defender interferes" -ForegroundColor Yellow
+}
+
 # Constants
 $ServiceName = "GymDoorBridge"
 $ServiceDisp = "Gym Door Access Bridge"
