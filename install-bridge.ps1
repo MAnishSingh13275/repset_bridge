@@ -2,6 +2,13 @@
 # Handles permissions, service configuration, pairing, and startup properly
 # Version 1.1 - Enhanced with better error handling and validation
 
+param(
+    [string]$PairCode = "",
+    [string]$ServerUrl = "https://repset.onezy.in",
+    [string]$InstallPath = "$env:ProgramFiles\GymDoorBridge",
+    [switch]$Force = $false
+)
+
 # Helper function to test if bridge is properly configured
 function Test-BridgeConfiguration {
     param(
@@ -72,13 +79,6 @@ function Wait-ForServiceHealth {
     Write-Host "⚠️  Service health check timed out after $TimeoutSeconds seconds" -ForegroundColor Yellow
     return $false
 }
-
-param(
-    [string]$PairCode = "",
-    [string]$ServerUrl = "https://repset.onezy.in",
-    [string]$InstallPath = "$env:ProgramFiles\GymDoorBridge",
-    [switch]$Force = $false
-)
 
 # Check admin privileges
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
